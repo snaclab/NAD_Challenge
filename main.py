@@ -3,7 +3,8 @@ import pandas as pd
 import argparse
 import preprocess
 import learning
-
+from xgboost import plot_importance
+import matplotlib.pyplot as plt
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process dataset name')
@@ -11,7 +12,6 @@ def parse_arg():
     parser.add_argument('--tst', help='input testing dataset', required=True)
 
     return parser.parse_args()
-
 
 if __name__ == '__main__':
     args = parse_arg()
@@ -29,3 +29,8 @@ if __name__ == '__main__':
     y_pred = learning.XGB_prediction(data_tst, model)
     
     learning.eval(Y_test, y_pred)
+
+    # plot feature importance
+    model.get_booster().feature_names = list(data_trn.columns)[:-1]
+    fig, ax = plt.subplots(figsize=(10, 10))
+    plot_importance(model.get_booster(), ax)
