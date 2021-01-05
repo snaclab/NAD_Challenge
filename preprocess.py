@@ -46,8 +46,8 @@ class Preprocessor:
         return countries_pd
 
 
-def data_transform(processor, df, unseen_label=[]):
-    app = pd.DataFrame(columns=['app'+str(x) for x in range(len(processor.one_hot_enc_dict['app'].categories_[0]))], data = processor.one_hot_transform(df, 'app', 'app'))
+def data_transform(processor, df, app_name, unseen_label=[]):
+    app = pd.DataFrame(columns=[app_name[x] for x in range(len(app_name))], data = processor.one_hot_transform(df, 'app', 'app'))
     data = pd.concat([df.reset_index(drop=True), app.reset_index(drop=True)], axis=1)
     if unseen_label:
         data = data[~data['label'].isin(unseen_label)]
@@ -106,9 +106,9 @@ if __name__ == '__main__':
     Processor.label_fit(df_trn, 'label', 'label')
 
     gen_lists = np.identity(len(df_trn['app'].unique()))
-    app_name = Processor.one_hot_enc_dict['app'].inverse_transform(gen_lists).reshape(1, -1)[0]
-    data_trn = data_transform(Processor, df_trn)
-    data_tst = data_transform(Processor, df_tst, unseen_label)
+    app_name = list(Processor.one_hot_enc_dict['app'].inverse_transform(gen_lists).reshape(1, -1)[0])
+    data_trn = data_transform(Processor, df_trn, app_name)
+    data_tst = data_transform(Processor, df_tst, app_name, unseen_label)
 
     print_class_name(Processor, n_class)
 
