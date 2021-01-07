@@ -7,11 +7,11 @@ from keras.layers import Dense, TimeDistributed, LSTM
 import csv
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="9"
-num_feature = 17
+num_feature = 15+32+45
 num_class = 5
 
 def genData(file_name):
-    app_name = {}#attr 9
+    app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 32 and 9(app name) has 45
     app_id = 0
     label = {'Normal':0, 'Probing-Nmap':1, 'Probing-Port sweep':2, 'Probing-IP sweep':3, 'DDOS-smurf':4}#attr -1
     data_n = 0
@@ -31,13 +31,26 @@ def genData(file_name):
     y = np.zeros((data_n, num_class))
 
     for datum_i in range(data_n):
+        x_i = 0
         for attr in range(5, 22):
-            if attr == 9:
-                X[datum_i, attr-5] = app_name[data[datum_i][attr]]
+            if attr == 8:
+                pass
+            elif attr == 9:
+                pass
+                #X[datum_i, attr-5] = app_name[data[datum_i][attr]]
             else:
-                X[datum_i, attr-5] = int(data[datum_i][attr])
+                X[datum_i, x_i] = int(data[datum_i][attr])
+                x_i += 1
+        X[datum_i, x_i+int(data[datum_i][8])] = 1
+        
+        x_i += 32
+        X[datum_i, x_i+int(app_name[data[datum_i][9]])] = 1
 
         y[datum_i, label[data[datum_i][22]]] = 1
+    
+    ##normalization -> [0, 1] 
+    for x_i in range(15):
+        X[:, x_i] = (X[:, x_i]-np.min(X[:, x_i]))/(np.max(X[:, x_i])-np.min(X[:, x_i]))
     data = []
     
     return X, y
@@ -61,7 +74,7 @@ class rnnModel():
     def __init__(self):
         #num_feature = 17
         #num_class = 5
-        unit_size = 256
+        unit_size = 32
 
         self.model = Sequential()
         self.model.add(LSTM(unit_size, input_shape=(None, num_feature), return_sequences=True))
