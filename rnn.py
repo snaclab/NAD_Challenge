@@ -7,10 +7,18 @@ from keras.layers import Dense, TimeDistributed, LSTM
 import csv
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="9"
+
 num_feature = 15+32+45
 num_class = 5
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
+
+def parse_arg():
+    parser = argparse.ArgumentParser(description='Process dataset name')
+    parser.add_argument('--trn', help='input training dataset', required=True)
+    parser.add_argument('--tst', help='input testing dataset', required=True)
+
+    return parser.parse_args()
 
 def genData(file_name):
     app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 32 and 9(app name) has 45
@@ -96,7 +104,6 @@ def genSeqData(X, y, overlap = True, max_len=100):
     #np.save('X.npy', X)
     #np.save('y.npy', y)
 
-
 class rnnModel():
     
     def __init__(self):
@@ -121,6 +128,8 @@ class rnnModel():
 
 if __name__ == '__main__':
     
+    args = parse_arg()
+    
     ## data preprocessing
     print('preprocessing')
     split = 0.7
@@ -129,13 +138,13 @@ if __name__ == '__main__':
         X = np.load(processed_trn_data)
         y = np.load(processed_trn_label)
     else:
-        X, y = genData('../NAD/1203_firewall.csv')
+        X, y = genData(args.trn)
         np.save(processed_trn_data, X)
         np.save(processed_trn_label, y)
 
     print('num data: ' + str(len(X))) 
     data_split = int(split*len(X))
-    X_train, y_train = genSeqData(X[:data_split], y[:data_split], True)
+    X_train, y_train = genSeqData(X[:data_split], y[:data_split], False)
     X_test, y_test = genSeqData(X[data_split:], y[data_split:], False)
 
     X = None
