@@ -122,7 +122,7 @@ if __name__ == '__main__':
     proto_name = inverse_one_hot_encoding(df_trn, 'proto')
     
     data_trn = data_transform(Processor, df_trn, app_name)
-    data_tst = data_transform(Processor, df_tst, app_name, unseen_label
+    data_tst = data_transform(Processor, df_tst, app_name, unseen_label)
 
     print_class_name(Processor, n_class)
 
