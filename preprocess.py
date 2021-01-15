@@ -45,10 +45,22 @@ class Preprocessor:
 
         return countries_pd
 
+def add_features(df):
+    df['port'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
+    df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
+
+    return df
+
+def inverse_one_hot_encoding(df, col):
+    gen_lists = np.identity(len(df[col].unique()))
+    col_name = list(Processor.one_hot_enc_dict[col].inverse_transform(gen_lists).reshape(1, -1)[0])
+    return col_name
 
 def data_transform(processor, df, app_name, unseen_label=[]):
     app = pd.DataFrame(columns=[app_name[x] for x in range(len(app_name))], data = processor.one_hot_transform(df, 'app', 'app'))
     data = pd.concat([df.reset_index(drop=True), app.reset_index(drop=True)], axis=1)
+    proto = pd.DataFrame(columns=['proto'+str(proto_name[x]) for x in range(len(proto_name))], data = processor.one_hot_transform(df, 'proto', 'proto'))
+    data = pd.concat([data.reset_index(drop=True), proto.reset_index(drop=True)], axis=1)
     if unseen_label:
         data = data[~data['label'].isin(unseen_label)]
     new_label = processor.label_transform(data, 'label', 'label')
@@ -103,10 +115,12 @@ if __name__ == '__main__':
     Processor = Preprocessor()
     df_trn = Processor.data_balance(df_trn, ratio=0.05)
     Processor.one_hot_fit(df_trn, 'app', 'app')
+    Processor.one_hot_fit(df_trn, 'proto', 'proto')
     Processor.label_fit(df_trn, 'label', 'label')
 
-    gen_lists = np.identity(len(df_trn['app'].unique()))
-    app_name = list(Processor.one_hot_enc_dict['app'].inverse_transform(gen_lists).reshape(1, -1)[0])
+    app_name = inverse_one_hot_encoding(df_trn, 'app')
+    proto_name = inverse_one_hot_encoding(df_trn, 'proto')
+    
     data_trn = data_transform(Processor, df_trn, app_name)
     data_tst = data_transform(Processor, df_tst, app_name, unseen_label)
 
