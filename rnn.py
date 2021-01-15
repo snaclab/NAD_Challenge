@@ -5,7 +5,7 @@ import numpy as np
 import learning
 import argparse
 from keras.models import Sequential
-from keras.layers import Dense, TimeDistributed, LSTM
+from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM
 import csv
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="9"
@@ -116,7 +116,7 @@ class rnnModel():
         unit_size = 16
 
         self.model = Sequential()
-        self.model.add(LSTM(unit_size, input_shape=(None, num_feature), return_sequences=True))
+        self.model.add(Bidirectional(LSTM(unit_size, return_sequences=True), input_shape=(None, num_feature)))
         self.model.add(TimeDistributed(Dense(num_class, activation='softmax')))
         self.model.compile(loss='categorical_crossentropy', optimizer='Adam', metrics=['accuracy'])
         self.model.summary()
@@ -137,6 +137,9 @@ class rnnModel():
         for i in range(num_tst):
             y_pred[i] = np.argmax(results[int(i/seq), i%seq, :])
         return y_pred
+
+    def saveModel(self, model_n):
+        self.model.save(model_n)
 
 if __name__ == '__main__':
     
@@ -203,4 +206,7 @@ if __name__ == '__main__':
     y_pred = model.testModel(X_test, num_tst)
     learning.eval(y_test, y_pred)
 
+    ## save model
+    print('save model')
+    model.saveModel('bidirection_lstm.h5')
 
