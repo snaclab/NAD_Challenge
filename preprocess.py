@@ -1,6 +1,7 @@
 from sklearn.preprocessing import OneHotEncoder
 from sklearn import preprocessing
 from ip2geotools.databases.noncommercial import DbIpCity
+from category_encoders import HashingEncoder
 import pandas as pd
 import numpy as np
 import argparse
@@ -10,6 +11,7 @@ class Preprocessor:
     def __init__(self):
         self.one_hot_enc_dict = {}
         self.label_enc_dict = {}
+        self.hash_enc_dict = {}
 
     def data_balance(self, df, ratio):
         df = pd.concat([df[df['label']!='Normal'], df[df['label']=='Normal'].sample(frac=ratio)]).reset_index(drop=True)
@@ -23,11 +25,18 @@ class Preprocessor:
         self.label_enc_dict[enc_name] = preprocessing.LabelEncoder()
         self.label_enc_dict[enc_name].fit(df[column_name].unique())
 
+    def hashing_fit(self, n_components, df, enc_name, column_name):
+        self.hash_enc_dict[enc_name] = HashingEncoder(n_components=n_components)
+        self.hash_enc_dict[enc_name].fit(df[column_name])
+
     def one_hot_transform(self, df, enc_name, column_name):
         return self.one_hot_enc_dict[enc_name].transform(np.array(df[column_name]).reshape(-1,1)).toarray()
 
     def label_transform(self, df, enc_name, column_name):
         return self.label_enc_dict[enc_name].transform(df[column_name].values)
+
+    def hashing_transform(self, df, enc_name, column_name):
+        return self.hash_enc_dict[enc_name].transform(df[column_name])
 
     def _get_country(self, IP):
         try:
@@ -93,6 +102,24 @@ def print_class_name(processor, n_class):
         print(l)
 
 
+def preprocess_ip(processor, df, fit=False):
+    src_strip = pd.DataFrame(columns=['ip_strip'], data=[i.rsplit('.', 1)[0] for i in df['src'].to_numpy()])
+    dst_strip = pd.DataFrame(columns=['ip_strip'], data=[i.rsplit('.', 1)[0] for i in df['dst'].to_numpy()])
+    if fit == True:
+        ip_strip = pd.DataFrame(columns=['ip_strip'], data=np.concatenate((src_strip['ip_strip'], dst_strip['ip_strip']), axis=0))
+        processor.hashing_fit(13, ip_strip, 'ip', 'ip_strip')
+    
+    df_ip_src = processor.hashing_transform(src_strip, 'ip', 'ip_strip')
+    df_ip_dst = processor.hashing_transform(dst_strip, 'ip', 'ip_strip')
+
+    df_ip_src = df_ip_src.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(df_ip_src.columns)})
+    df_ip_dst = df_ip_dst.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(df_ip_dst.columns)})
+
+    data = pd.concat([df.reset_index(drop=True), df_ip_src.reset_index(drop=True), df_ip_dst.reset_index(drop=True)], axis=1)
+
+    return data
+
+
 def parse_arg():
     parser = argparse.ArgumentParser()
     parser.add_argument('--trn', help='input training dataset', required=True)
@@ -117,6 +144,9 @@ if __name__ == '__main__':
     Processor.one_hot_fit(df_trn, 'app', 'app')
     Processor.one_hot_fit(df_trn, 'proto', 'proto')
     Processor.label_fit(df_trn, 'label', 'label')
+
+    df_trn = preprocess_ip(Processor, df_trn, fit=True)
+    df_tst = preprocess_ip(Processor, df_tst, fit=False)
 
     app_name = inverse_one_hot_encoding(df_trn, 'app')
     proto_name = inverse_one_hot_encoding(df_trn, 'proto')
