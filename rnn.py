@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 #from tensorflow import keras
 import learning
+import preprocess
 import argparse
 from keras.models import Sequential
 from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM
@@ -15,6 +16,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="8"
 
 validation_check = False
 num_feature = 15+32+45+1
+pca_feature = 32
 num_class = 5
 NORMAL_OFFSET = int(180625*2)
 app_name = {}
@@ -58,7 +60,7 @@ def genData(train_file):
                 if label[row[-1]] == 0:
                     normal_size += 1
                 
-                if train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != 0:
+                if True or train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != 0:
                     #if label[row[-1]] <= 1:
                     #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
                     data_n+=1
@@ -136,14 +138,14 @@ def genSeqData(X, y, overlap = True, max_len=50, test_label = False):
 
     data_n = len(X)
     if overlap:
-        X_seq = np.zeros((data_n-max_len+1, max_len, num_feature))
+        X_seq = np.zeros((data_n-max_len+1, max_len, pca_feature))
         y_seq = np.zeros((data_n-max_len+1, max_len, num_class))
 
         for datum_i in range(data_n-max_len+1):
             X_seq[datum_i, :, :] = X[datum_i:datum_i+max_len, :]
             y_seq[datum_i, :, :] = y[datum_i:datum_i+max_len, :]
     else:
-        X_seq = np.zeros((int(np.ceil(data_n/max_len)), max_len, num_feature))
+        X_seq = np.zeros((int(np.ceil(data_n/max_len)), max_len, pca_feature))
         y_seq = np.zeros((int(np.ceil(data_n/max_len)), max_len, num_class))
         
         x_i = 0
@@ -183,7 +185,7 @@ class rnnModel():
         self.model = Sequential()
         #self.model.add(TimeDistributed(Dense(32, input_shape=(None, num_feature))))
         #self.model.add(LSTM(unit_size, return_sequences=True))
-        self.model.add(Bidirectional(LSTM(unit_size, return_sequences=True), input_shape=(None, num_feature)))
+        self.model.add(Bidirectional(LSTM(unit_size, return_sequences=True), input_shape=(None, pca_feature)))
         #self.model.add(LSTM(unit_size, return_sequences=True, input_shape=(None, num_feature)))
         #self.model.add(TimeDistributed(Dense(8, activation='relu')))
         self.model.add(TimeDistributed(Dense(num_class, activation='softmax')))
@@ -251,6 +253,7 @@ if __name__ == '__main__':
     data_split = int(split*len(X))
     num_val = len(X[data_split:])
     Normalization(X, X_tst)
+    X, X_tst = preprocess.PCA_transform(X, X_tst, pca_feature)
 
     if validation_check:
         shuffle_id = np.arange(num_trn)
@@ -261,14 +264,13 @@ if __name__ == '__main__':
         X_val, y_val = genSeqData(X[data_split:], y[data_split:], False)
         val_test = np.argmax(y[data_split:], axis=-1)
     else:
-        X_train, y_train = genSeqData(X[:], y[:], True)
+        X_train, y_train = genSeqData(X[:], y[:], False)
         #genTimeSeqData(X[:], y[:], time_mark)
 
     X_test, y_test = genSeqData(X_tst, y_tst, False, test_label=True)
     
     X, y = None, None
     X_tst, y_tst = None, None
-    
     
     ## build model 
     print('build model')

@@ -1,5 +1,6 @@
 from sklearn.preprocessing import OneHotEncoder
 from sklearn import preprocessing
+from sklearn.decomposition import PCA
 from ip2geotools.databases.noncommercial import DbIpCity
 import pandas as pd
 import numpy as np
@@ -56,6 +57,16 @@ def data_transform(processor, df, app_name, unseen_label=[]):
     data.drop(['src', 'dst', 'time', 'app', 'spt', 'dpt', 'label'], axis=1, inplace=True)
     data.rename(columns={"class": "label"}, inplace=True)
     return data
+
+def PCA_transform(X_train, X_test, dim=32):
+    
+    X = np.concatenate((X_train, X_test))
+    pca = PCA(n_components=dim)
+    pca.fit(X)
+    X_train_pca = pca.transform(X_train)
+    X_test_pca = pca.transform(X_test)
+
+    return X_train_pca, X_test_pca
 
 # currently not efficient, since it have to send a api request to a webservice
 def add_country_attr(processor, df):
