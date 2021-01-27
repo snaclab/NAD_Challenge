@@ -9,18 +9,22 @@ from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM
 import csv
 import os
 import random
+import pickle
 
 os.environ["CUDA_VISIBLE_DEVICES"]="8"
 
 validation_check = False
 num_feature = 15+32+45+1
 num_class = 5
-NORMAL_OFFSET = 150000#int(180625*1)
+NORMAL_OFFSET = int(180625*2)
 app_name = {}
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
 processed_tst_label = 'y_test.npy'
+time_trn = 'time_mark.pickle'
+time_tst = 'time_mark_test.pickle'
+
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process dataset name')
@@ -38,6 +42,7 @@ def genData(train_file):
     data_n = 0
     data = []
     normal_size = 0
+    time_mark = []
 
     
     if train_file:
@@ -53,11 +58,12 @@ def genData(train_file):
                 if label[row[-1]] == 0:
                     normal_size += 1
                 
-                if True or train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != 0:
+                if train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != 0:
                     #if label[row[-1]] <= 1:
                     #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
                     data_n+=1
                     data.append(row)
+                    time_mark.append(row[0])
                     if not row[9] in app_name:
                         app_name[row[9]] = app_id
                         app_id += 1
@@ -84,9 +90,43 @@ def genData(train_file):
 
         y[datum_i, label[data[datum_i][22]]] = 1
     
-    return X, y
+    return X, y, time_mark
 
-def genSeqData(X, y, overlap = True, max_len=20, test_label = False):
+
+
+def genTimeSeqData(X, y, time_mark):
+    ##split data by time mark
+    ##1 minute as a unit
+    #day = None
+    #hms = [-1, -1, -1]
+    idx = 0
+    dateindex = {}
+
+    for t in time_mark:
+        date = t.split()
+        day = date[0]
+        hms = date[1].split(':')
+        
+        if not day in dateindex:
+            dateindex[day] = []
+            for hr in range(24):
+                empty = []
+                for mi in range(60):
+                    empty.append([])
+                dateindex[day].append(empty)
+        dateindex[day][int(hms[0])][int(hms[1])].append(idx)
+        idx += 1
+
+    for d in dateindex.keys():
+        for hr in range(24):
+            for mi in range(60):
+                
+                if len(dateindex[d][hr][mi]) > 0:
+                    print(len(dateindex[d][hr][mi]))
+    
+
+
+def genSeqData(X, y, overlap = True, max_len=50, test_label = False):
     ##turn data into a batch of sequences
     #  1       1, 2           |  1, 2
     #  2       2, 3           |  3, 4
@@ -128,7 +168,6 @@ def genSeqData(X, y, overlap = True, max_len=20, test_label = False):
     return X_seq, y_seq
 
 def Normalization(X_train, X_test):
-    
     ##normalization -> [0, 1]
     for x_i in range(15):
         max_v = max(np.max(X_train[:, x_i]), np.max(X_test[:, x_i]))
@@ -146,7 +185,7 @@ class rnnModel():
         #self.model.add(LSTM(unit_size, return_sequences=True))
         self.model.add(Bidirectional(LSTM(unit_size, return_sequences=True), input_shape=(None, num_feature)))
         #self.model.add(LSTM(unit_size, return_sequences=True, input_shape=(None, num_feature)))
-        self.model.add(TimeDistributed(Dense(8, activation='relu')))
+        #self.model.add(TimeDistributed(Dense(8, activation='relu')))
         self.model.add(TimeDistributed(Dense(num_class, activation='softmax')))
         self.model.compile(loss='categorical_crossentropy', optimizer='Adam', metrics=['accuracy'])
         self.model.summary()
@@ -183,19 +222,27 @@ if __name__ == '__main__':
     if os.path.isfile(processed_trn_data) and os.path.isfile(processed_trn_label):
         X = np.load(processed_trn_data)
         y = np.load(processed_trn_label)
+        with open(time_trn, 'rb') as fp:
+            time_mark = pickle.load(fp)
     else:
         #X, y = genData(args.trn)
-        X, y = genData(True)
+        X, y, time_mark = genData(True)
         np.save(processed_trn_data, X)
         np.save(processed_trn_label, y)
+        with open(time_trn, 'wb') as fp:
+            pickle.dump(time_mark, fp)
     
     if os.path.isfile(processed_tst_data) and os.path.isfile(processed_tst_label):
         X_tst = np.load(processed_tst_data)
         y_tst = np.load(processed_tst_label)
+        with open(time_tst, 'rb') as fp:
+            time_mark_tst = pickle.load(fp)
     else:
-        X_tst, y_tst = genData(False)
+        X_tst, y_tst, time_mark_tst = genData(False)
         np.save(processed_tst_data, X_tst)
         np.save(processed_tst_label, y_tst)
+        with open(time_tst, 'wb') as fp:
+            pickle.dump(time_mark_tst, fp)
 
     num_trn = len(X)
     num_tst = len(X_tst)
@@ -214,14 +261,15 @@ if __name__ == '__main__':
         X_val, y_val = genSeqData(X[data_split:], y[data_split:], False)
         val_test = np.argmax(y[data_split:], axis=-1)
     else:
-        X_train, y_train = genSeqData(X[:], y[:], False)
+        X_train, y_train = genSeqData(X[:], y[:], True)
+        #genTimeSeqData(X[:], y[:], time_mark)
 
     X_test, y_test = genSeqData(X_tst, y_tst, False, test_label=True)
     
     X, y = None, None
     X_tst, y_tst = None, None
     
-
+    
     ## build model 
     print('build model')
     model = rnnModel()
@@ -229,7 +277,7 @@ if __name__ == '__main__':
     ## training (adust hyper parameters)
     print('training')
     epochs = 20
-    batch_size = 256#2048 is upper bound
+    batch_size = 2048#2048 is upper bound
 
 
     for ep in range(epochs):
@@ -256,4 +304,5 @@ if __name__ == '__main__':
     ## save model
     print('save model')
     #model.saveModel('bidirection_lstm.h5')
+    
 
