@@ -6,7 +6,7 @@ import learning
 import preprocess
 import argparse
 from keras.models import Sequential
-from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM
+from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten
 import csv
 import os
 import random
@@ -18,7 +18,8 @@ validation_check = False
 num_feature = 15+32+45+1
 pca_feature = 32
 num_class = 5
-NORMAL_OFFSET = int(180625*2)
+seq_step = 100
+NORMAL_OFFSET = int(180625*0.5)
 app_name = {}
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
@@ -60,7 +61,7 @@ def genData(train_file):
                 if label[row[-1]] == 0:
                     normal_size += 1
                 
-                if True or train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != 0:
+                if train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != 0:
                     #if label[row[-1]] <= 1:
                     #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
                     data_n+=1
@@ -179,15 +180,18 @@ def Normalization(X_train, X_test):
             X_test[:, x_i] = (X_test[:, x_i]-min_v)/(max_v-min_v)
 
 class rnnModel():
-    def __init__(self):
+    def __init__(self, time_step = 50):
         unit_size = 16
 
         self.model = Sequential()
+        self.model.add(Conv1D(2*unit_size, 20, activation='relu', padding='same', input_shape=(time_step, pca_feature)))
         #self.model.add(TimeDistributed(Dense(32, input_shape=(None, num_feature))))
         #self.model.add(LSTM(unit_size, return_sequences=True))
-        self.model.add(Bidirectional(LSTM(unit_size, return_sequences=True), input_shape=(None, pca_feature)))
-        #self.model.add(LSTM(unit_size, return_sequences=True, input_shape=(None, num_feature)))
+        #self.model.add(Bidirectional(LSTM(unit_size, return_sequences=True), input_shape=(None, pca_feature)))
+        self.model.add(LSTM(unit_size, return_sequences=True, input_shape=(None, num_feature)))
         #self.model.add(TimeDistributed(Dense(8, activation='relu')))
+        #self.model.add(Flatten())
+        #self.model.add(Dense(256, activation='relu'))
         self.model.add(TimeDistributed(Dense(num_class, activation='softmax')))
         self.model.compile(loss='categorical_crossentropy', optimizer='Adam', metrics=['accuracy'])
         self.model.summary()
@@ -260,21 +264,21 @@ if __name__ == '__main__':
         np.random.shuffle(shuffle_id)
         X = X[shuffle_id]
         y = y[shuffle_id]
-        X_train, y_train = genSeqData(X[:data_split], y[:data_split], False)
-        X_val, y_val = genSeqData(X[data_split:], y[data_split:], False)
+        X_train, y_train = genSeqData(X[:data_split], y[:data_split], False, max_len=seq_step)
+        X_val, y_val = genSeqData(X[data_split:], y[data_split:], False, max_len=seq_step)
         val_test = np.argmax(y[data_split:], axis=-1)
     else:
-        X_train, y_train = genSeqData(X[:], y[:], False)
+        X_train, y_train = genSeqData(X[:], y[:], True, max_len=seq_step)
         #genTimeSeqData(X[:], y[:], time_mark)
 
-    X_test, y_test = genSeqData(X_tst, y_tst, False, test_label=True)
+    X_test, y_test = genSeqData(X_tst, y_tst, False, max_len=seq_step, test_label=True)
     
     X, y = None, None
     X_tst, y_tst = None, None
     
     ## build model 
     print('build model')
-    model = rnnModel()
+    model = rnnModel(seq_step)
     
     ## training (adust hyper parameters)
     print('training')
