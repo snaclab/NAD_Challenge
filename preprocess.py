@@ -4,6 +4,7 @@ from ip2geotools.databases.noncommercial import DbIpCity
 from category_encoders import HashingEncoder
 import pandas as pd
 import numpy as np
+import ipaddress
 import argparse
 import sys
 
@@ -101,13 +102,37 @@ def print_class_name(processor, n_class):
     for l in zip(classes, labels_name):
         print(l)
 
+def preprocess_ip_binarize(df):
+    df_src = pd.DataFrame(columns=['src'], data = ['{0:08b}'.format(int(ipaddress.IPv4Address(x))).zfill(32) for x in df['src']])
+    df_dst = pd.DataFrame(columns=['dst'], data = ['{0:08b}'.format(int(ipaddress.IPv4Address(x))).zfill(32) for x in df['dst']])
 
-def preprocess_ip(processor, df, fit=False):
+    src_split = df_src['src'].str.slice().apply(lambda i: pd.Series(list(i)))
+    dst_split = df_dst['dst'].str.slice().apply(lambda i: pd.Series(list(i)))
+
+    src_split = src_split.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(src_split.columns)})
+    dst_split = dst_split.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(dst_split.columns)})
+
+    data = pd.concat([df.reset_index(drop=True), src_split.reset_index(drop=True), dst_split.reset_index(drop=True)], axis=1)
+
+    return data
+
+def preprocess_ip_split(df):
+    df_src = df['src'].str.split('.', expand=True)
+    df_dst = df['dst'].str.split('.', expand=True)
+
+    df_src = df_src.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(df_src.columns)})
+    df_dst = df_dst.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(df_dst.columns)})
+
+    data = pd.concat([df.reset_index(drop=True), df_src.reset_index(drop=True), df_dst.reset_index(drop=True)], axis=1)
+
+    return data
+
+def preprocess_ip_hashing(processor, df, fit=False):
     src_strip = pd.DataFrame(columns=['ip_strip'], data=[i.rsplit('.', 1)[0] for i in df['src'].to_numpy()])
     dst_strip = pd.DataFrame(columns=['ip_strip'], data=[i.rsplit('.', 1)[0] for i in df['dst'].to_numpy()])
     if fit == True:
         ip_strip = pd.DataFrame(columns=['ip_strip'], data=np.concatenate((src_strip['ip_strip'], dst_strip['ip_strip']), axis=0))
-        processor.hashing_fit(13, ip_strip, 'ip', 'ip_strip')
+        processor.hashing_fit(32, ip_strip, 'ip', 'ip_strip')
     
     df_ip_src = processor.hashing_transform(src_strip, 'ip', 'ip_strip')
     df_ip_dst = processor.hashing_transform(dst_strip, 'ip', 'ip_strip')
@@ -145,8 +170,8 @@ if __name__ == '__main__':
     Processor.one_hot_fit(df_trn, 'proto', 'proto')
     Processor.label_fit(df_trn, 'label', 'label')
 
-    df_trn = preprocess_ip(Processor, df_trn, fit=True)
-    df_tst = preprocess_ip(Processor, df_tst, fit=False)
+    df_trn = preprocess_ip_binarize(df_trn)
+    df_tst = preprocess_ip_binarize(df_tst)
 
     app_name = inverse_one_hot_encoding(df_trn, 'app')
     proto_name = inverse_one_hot_encoding(df_trn, 'proto')
