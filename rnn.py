@@ -15,7 +15,7 @@ import pickle
 os.environ["CUDA_VISIBLE_DEVICES"]="8"
 
 validation_check = False
-num_feature = 15+32+45+1
+num_feature = 15+32+45+1+64
 pca_feature = 32
 num_class = 5
 seq_step = 100
@@ -90,6 +90,20 @@ def genData(train_file):
         #dst, src port == zero
         if int(data[datum_i][3]) == 0 and int(data[datum_i][4]) == 0:
             X[datum_i, x_i] = 1
+        x_i+=1
+        #IP transformation
+        ip = data[datum_i][1].split('.')
+        for ip_str in ip:
+            ip_n = bin(int(ip_str)+1024)
+            for n in range(1, 9):
+                X[datum_i, x_i+8-n] = int(ip_n[-n])
+            x_i+=8
+        ip = data[datum_i][2].split('.')
+        for ip_str in ip:
+            ip_n = bin(int(ip_str)+1024)
+            for n in range(1, 9):
+                X[datum_i, x_i+8-n] = int(ip_n[-n])
+            x_i+=8
 
         y[datum_i, label[data[datum_i][22]]] = 1
     
