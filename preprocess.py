@@ -14,8 +14,9 @@ class Preprocessor:
         self.label_enc_dict = {}
         self.hash_enc_dict = {}
 
-    def data_balance(self, df, ratio):
-        df = pd.concat([df[df['label']!='Normal'], df[df['label']=='Normal'].sample(frac=ratio)]).reset_index(drop=True)
+    def data_balance(self, df):
+        normal_n = int(df['label'].value_counts().to_frame().loc['Probing-IP sweep','label']*1.3)
+        df = pd.concat([df[df['label']!='Normal'], df[df['label']=='Normal'].sample(n=normal_n)]).reset_index(drop=True)
         return df
 
     def one_hot_fit(self, df, enc_name, column_name):
@@ -56,7 +57,7 @@ class Preprocessor:
         return countries_pd
 
 def add_features(df):
-    df['port'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
+    df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
 
     return df
@@ -66,16 +67,14 @@ def inverse_one_hot_encoding(df, col):
     col_name = list(Processor.one_hot_enc_dict[col].inverse_transform(gen_lists).reshape(1, -1)[0])
     return col_name
 
-def data_transform(processor, df, app_name, unseen_label=[]):
+def data_transform(processor, df, app_name):
     app = pd.DataFrame(columns=[app_name[x] for x in range(len(app_name))], data = processor.one_hot_transform(df, 'app', 'app'))
     data = pd.concat([df.reset_index(drop=True), app.reset_index(drop=True)], axis=1)
     proto = pd.DataFrame(columns=['proto'+str(proto_name[x]) for x in range(len(proto_name))], data = processor.one_hot_transform(df, 'proto', 'proto'))
     data = pd.concat([data.reset_index(drop=True), proto.reset_index(drop=True)], axis=1)
-    if unseen_label:
-        data = data[~data['label'].isin(unseen_label)]
     new_label = processor.label_transform(data, 'label', 'label')
     data['class'] = new_label
-    data.drop(['src', 'dst', 'time', 'app', 'spt', 'dpt', 'label'], axis=1, inplace=True)
+    data.drop(['src', 'dst', 'time', 'app', 'proto', 'spt', 'dpt', 'label'], axis=1, inplace=True)
     data.rename(columns={"class": "label"}, inplace=True)
     return data
 
@@ -161,14 +160,16 @@ if __name__ == '__main__':
     df_trn = pd.read_csv(args.trn)
     df_tst = pd.read_csv(args.tst)
     n_class = len(df_trn['label'].unique())
-    unseen_label = set(df_tst['label'].unique().tolist()) - set(df_trn['label'].unique().tolist())
-
+    
     # preprocess data
     Processor = Preprocessor()
-    df_trn = Processor.data_balance(df_trn, ratio=0.05)
+    df_trn = Processor.data_balance(df_trn)
     Processor.one_hot_fit(df_trn, 'app', 'app')
     Processor.one_hot_fit(df_trn, 'proto', 'proto')
     Processor.label_fit(df_trn, 'label', 'label')
+
+    df_trn = add_features(df_trn)
+    df_tst = add_features(df_tst)
 
     df_trn = preprocess_ip_binarize(df_trn)
     df_tst = preprocess_ip_binarize(df_tst)
@@ -177,7 +178,7 @@ if __name__ == '__main__':
     proto_name = inverse_one_hot_encoding(df_trn, 'proto')
     
     data_trn = data_transform(Processor, df_trn, app_name)
-    data_tst = data_transform(Processor, df_tst, app_name, unseen_label)
+    data_tst = data_transform(Processor, df_tst, app_name)
 
     print_class_name(Processor, n_class)
 
