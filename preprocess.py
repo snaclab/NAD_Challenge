@@ -18,6 +18,7 @@ class Preprocessor:
     def data_balance(self, df):
         normal_n = int(df['label'].value_counts().to_frame().loc['Probing-IP sweep','label']*1.3)
         df = pd.concat([df[df['label']!='Normal'], df[df['label']=='Normal'].sample(n=normal_n)]).reset_index(drop=True)
+        
         return df
 
     def one_hot_fit(self, df, enc_name, column_name):
@@ -58,8 +59,13 @@ class Preprocessor:
         return countries_pd
 
 def add_features(df):
+    inner_ip_list = ['172.{}'.format(x) for x in range(16, 32)]
+    inner_ip_list.extend(['192.168', '10.'])
+    df['inner_src'] = df['src'].apply(lambda x: int(x.startswith(tuple(inner_ip_list))))
+    df['inner_dst'] = df['dst'].apply(lambda x: int(x.startswith(tuple(inner_ip_list))))
     df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
+    df['flow_diff'] = df['flow_diff'].apply(lambda x: 0 if x==0 else (1 if x>0 else -1))
 
     return df
 
@@ -115,7 +121,7 @@ def print_class_name(processor, n_class):
 def preprocess_ip_binarize(df):
     df_src = pd.DataFrame(columns=['src'], data = ['{0:08b}'.format(int(ipaddress.IPv4Address(x))).zfill(32) for x in df['src']])
     df_dst = pd.DataFrame(columns=['dst'], data = ['{0:08b}'.format(int(ipaddress.IPv4Address(x))).zfill(32) for x in df['dst']])
-
+    
     src_split = df_src['src'].str.slice().apply(lambda i: pd.Series(list(i)))
     dst_split = df_dst['dst'].str.slice().apply(lambda i: pd.Series(list(i)))
 
@@ -182,9 +188,9 @@ if __name__ == '__main__':
     df_trn = add_features(df_trn)
     df_tst = add_features(df_tst)
 
-    df_trn = preprocess_ip_binarize(df_trn)
-    df_tst = preprocess_ip_binarize(df_tst)
-
+    #df_trn = preprocess_ip_binarize(df_trn)
+    #df_tst = preprocess_ip_binarize(df_tst)
+    
     app_name = inverse_one_hot_encoding(df_trn, 'app')
     proto_name = inverse_one_hot_encoding(df_trn, 'proto')
     

@@ -5,6 +5,7 @@ import preprocess
 import learning
 from xgboost import plot_importance
 import matplotlib.pyplot as plt
+import datetime
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process dataset name')
@@ -27,6 +28,24 @@ if __name__ == '__main__':
     # prediction
     Y_test = data_tst[['label']].copy().values.reshape(1, -1)[0]
     y_pred = learning.XGB_prediction(data_tst, model)
+    df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
+    
+    # postprocess
+    test = pd.read_csv('../nad/test_no.csv')
+    ans = test[['time','src','label']]
+    ans = pd.concat([ans, df_pred], axis=1)
+    ans['time'] = ans['time'].apply(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
+    ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2)+str(x.minute).zfill(2))
+    ans['time+src'] = ans['time'].apply(str) + ans['src'].apply(str)
+    ans.drop(columns=['time','src'],inplace=True)
+    d_v = ans.groupby(['time+src']).sum()
+    d_v = d_v.idxmax(axis='columns').to_frame()
+    DIC = {}
+    for idx, row in d_v.iterrows():
+        DIC[idx] = row[0]
+    ans['pred'] = [1 for i in range(len(ans))]
+    ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
+    y_pred = ans['pred'].values
     
     learning.eval(Y_test, y_pred)
 
