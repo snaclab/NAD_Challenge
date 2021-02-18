@@ -444,10 +444,10 @@ if __name__ == '__main__':
     y_i = 0
     y_v = np.zeros((num_tst, 5))
     y_v[:, 0] = y_value[:, 0]
-    y_v[:, 2:] = y_value[:, 1:]
+    #y_v[:, 2:] = y_value[:, 1:]
     for dat_i in range(len(xgboost_pred)):
         if xgboost_pred[dat_i] != 1:
-            xgboost_value[dat_i, :] = (xgboost_value[dat_i, :]+y_v[y_i, :])/2
+            xgboost_value[dat_i, 0] = (xgboost_value[dat_i, 0]+y_v[y_i, 0])/2
             y_i+=1
 
     with open('xgrnn_pred.pickle', 'wb') as fp:
