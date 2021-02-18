@@ -133,8 +133,11 @@ def print_class_name(processor, n_class):
         print(l)
 
 def preprocess_ip_binarize(df):
-    df_src = pd.DataFrame(columns=['src'], data = ['{0:08b}'.format(int(ipaddress.IPv4Address(x))).zfill(32) for x in df['src']])
-    df_dst = pd.DataFrame(columns=['dst'], data = ['{0:08b}'.format(int(ipaddress.IPv4Address(x))).zfill(32) for x in df['dst']])
+    df_src = pd.DataFrame(columns=['src'], data = df['src'])
+    df_dst = pd.DataFrame(columns=['dst'], data = df['dst'])
+
+    df_src['src'] = df_src['src'].apply(lambda x: ''.join([bin(int(i)+256)[3:] for i in x.split('.')]))
+    df_dst['dst'] = df_dst['dst'].apply(lambda x: ''.join([bin(int(i)+256)[3:] for i in x.split('.')]))
     
     src_split = df_src['src'].str.slice().apply(lambda i: pd.Series(list(i)))
     dst_split = df_dst['dst'].str.slice().apply(lambda i: pd.Series(list(i)))
