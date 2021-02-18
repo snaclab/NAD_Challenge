@@ -50,16 +50,18 @@ def genData(train_file):
     time_mark = []
     ip_mark = []
     
-    check_in = False
+    #check_in = False
     dat_id = 0
-    check_in_id = [(0, 1000)]#[(i, i+1000) for i in range(0, 6000000, int(6000000/234))]
+    #check_in_id = [(0, 1000)]#[(i, i+1000) for i in range(0, 6000000, int(6000000/234))]
 
     
     if train_file:
         files = ['../NAD/train.csv']#, '../NAD/1210_firewall.csv']
     else:
         files = ['../NAD/test.csv']
-
+        with open('xgboost_pred.pickle', 'rb') as fp:
+            xgboost_value = pickle.load(fp)
+        xgboost_pred = np.argmax(xgboost_value, axis=-1)
     for file_name in files:
         with open(file_name, newline='') as f:
             reader = csv.reader(f)
@@ -78,17 +80,29 @@ def genData(train_file):
                 dat_id += 1
                 '''
                 #if train_file == False or check_in or label[row[-1]] != 1:
-                if label[row[-1]] != -1:
-                    #if label[row[-1]] <= 1:
-                    #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
-                    data_n+=1
-                    data.append(row)
-                    time_mark.append(row[0])
-                    #src_ip_mark.append(row[1])
-                    ip_mark.append(row[2])
-                    if not row[9] in app_name:
-                        app_name[row[9]] = app_id
-                        app_id += 1
+                if not train_file:
+                    if xgboost_pred[dat_id] != 1:
+                        data_n+=1
+                        data.append(row)
+                        time_mark.append(row[0])
+                        #src_ip_mark.append(row[1])
+                        ip_mark.append(row[2])
+                        if not row[9] in app_name:
+                            app_name[row[9]] = app_id
+                            app_id += 1
+                    dat_id += 1
+                else:
+                    if label[row[-1]] != -1:
+                        #if label[row[-1]] <= 1:
+                        #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
+                        data_n+=1
+                        data.append(row)
+                        time_mark.append(row[0])
+                        #src_ip_mark.append(row[1])
+                        ip_mark.append(row[2])
+                        if not row[9] in app_name:
+                            app_name[row[9]] = app_id
+                            app_id += 1
 
     X = np.zeros((data_n, num_feature))
     y = np.zeros((data_n, num_class))
@@ -309,10 +323,12 @@ class rnnModel():
         results = self.model.predict(X, batch_size=2048)
         seq = results.shape[1]
 
+        y_value = np.zeros((num_tst, num_class))
         y_pred = np.zeros(num_tst, dtype=np.int64)
         for i in range(num_tst):
+            y_value[i, :] = results[int(i/seq), i%seq, :]
             y_pred[i] = np.argmax(results[int(i/seq), i%seq, :])
-        return y_pred
+        return y_pred, y_value
 
     def saveModel(self, model_n):
         self.model.save(model_n)
@@ -415,13 +431,29 @@ if __name__ == '__main__':
     ## testing
     print('testing')
     if validation_check:
-        val_pred = model.testModel(X_val, num_val)
+        val_pred, _ = model.testModel(X_val, num_val)
         learning.eval(val_test, val_pred)
     
-    y_pred = model.testModel(X_test, num_tst)
+    y_pred, y_value = model.testModel(X_test, num_tst)
     #print(len(y_test))
     #print(len(y_pred))
-    learning.eval(y_test, y_pred)
+    with open('xgboost_pred.pickle', 'rb') as fp:
+        xgboost_value = pickle.load(fp)
+    xgboost_pred = np.argmax(xgboost_value, axis=-1)
+    
+    y_i = 0
+    y_v = np.zeros((num_tst, 5))
+    y_v[:, 0] = y_value[:, 0]
+    y_v[:, 2:] = y_value[:, 1:]
+    for dat_i in range(len(xgboost_pred)):
+        if xgboost_pred[dat_i] != 1:
+            xgboost_value[dat_i, :] = (xgboost_value[dat_i, :]+y_v[y_i, :])/2
+            y_i+=1
+
+    with open('xgrnn_pred.pickle', 'wb') as fp:
+        pickle.dump(xgboost_value, fp)
+
+    #learning.eval(y_test, y_pred)
 
     ## save model
     print('save model')
