@@ -19,7 +19,7 @@ num_feature = 15+32+45+1#+64#+32#+64+32
 pca_feature = num_feature#32
 num_class = 4#5
 seq_step = 10
-NORMAL_OFFSET = 0#int(180625*0.5)
+NORMAL_OFFSET = int(180625*1.3)
 app_name = {}
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
@@ -43,12 +43,16 @@ def genData(train_file):
 
     #app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 32(256) and 9(app name) has 45
     app_id = 0
-    label = {'Normal':-1, 'Probing-Nmap':0, 'Probing-Port sweep':1, 'Probing-IP sweep':2, 'DDOS-smurf':3}#attr -1
+    label = {'Normal':-1, 'Probing-Nmap':2, 'Probing-Port sweep':3, 'Probing-IP sweep':1, 'DDOS-smurf':0}#attr -1
     data_n = 0
     data = []
     normal_size = 0
     time_mark = []
     ip_mark = []
+    
+    check_in = False
+    dat_id = 0
+    check_in_id = [(0, 1000)]#[(i, i+1000) for i in range(0, 6000000, int(6000000/234))]
 
     
     if train_file:
@@ -61,10 +65,19 @@ def genData(train_file):
             reader = csv.reader(f)
             next(reader)
             for row in reader:
-                #if label[row[-1]] == -1:
-                #    normal_size += 1
+                ##normal check in
+                '''
+                if train_file:
+                    check_in = False
+                    for offset in check_in_id:
+                        if label[row[-1]] == 1 and dat_id >= offset[0] and dat_id <= offset[1]:
+                            check_in = True
+                            break
+                    #normal_size += 1
                 
-                #if train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != -1:
+                dat_id += 1
+                '''
+                #if train_file == False or check_in or label[row[-1]] != 1:
                 if label[row[-1]] != -1:
                     #if label[row[-1]] <= 1:
                     #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
@@ -404,6 +417,7 @@ if __name__ == '__main__':
     if validation_check:
         val_pred = model.testModel(X_val, num_val)
         learning.eval(val_test, val_pred)
+    
     y_pred = model.testModel(X_test, num_tst)
     #print(len(y_test))
     #print(len(y_pred))
