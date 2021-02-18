@@ -3,9 +3,9 @@ import pandas as pd
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+import pickle
 
 def eval(Y_test, y_pred):
-    print('Test set:')
     print(confusion_matrix(Y_test, y_pred))
     print(classification_report(Y_test, y_pred, digits=len(set(Y_test.reshape(1, -1)[0]))))
 
@@ -24,3 +24,10 @@ def XGB_training(data, n_class):
 def XGB_prediction(data, model):
     X_test = data[[c for c in data.columns if c != 'label']].copy().values
     return model.predict_proba(X_test)
+
+def save_model(model, fname):
+    pickle.dump(model, open(fname, 'wb'))
+
+def load_model(fname):
+    model = pickle.load(open(fname, 'rb'))
+    return model
