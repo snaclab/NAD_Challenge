@@ -6,7 +6,7 @@ import learning
 import preprocess
 import argparse
 from keras.models import Sequential
-from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten
+from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten, Masking
 import csv
 import os
 import random
@@ -15,11 +15,11 @@ import pickle
 os.environ["CUDA_VISIBLE_DEVICES"]="8"
 
 validation_check = False
-num_feature = 15+32+45+1+64
-pca_feature = 32
-num_class = 5
-seq_step = 100
-NORMAL_OFFSET = int(180625*0.5)
+num_feature = 15+32+45+1#+64#+32#+64+32
+pca_feature = num_feature#32
+num_class = 4#5
+seq_step = 10
+NORMAL_OFFSET = 0#int(180625*0.5)
 app_name = {}
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
@@ -27,6 +27,8 @@ processed_tst_data = 'X_test.npy'
 processed_tst_label = 'y_test.npy'
 time_trn = 'time_mark.pickle'
 time_tst = 'time_mark_test.pickle'
+ip_trn = 'ip_mark.pickle'
+ip_tst = 'ip_mark_test.pickle'
 
 
 def parse_arg():
@@ -41,11 +43,12 @@ def genData(train_file):
 
     #app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 32(256) and 9(app name) has 45
     app_id = 0
-    label = {'Normal':0, 'Probing-Nmap':1, 'Probing-Port sweep':2, 'Probing-IP sweep':3, 'DDOS-smurf':4}#attr -1
+    label = {'Normal':-1, 'Probing-Nmap':0, 'Probing-Port sweep':1, 'Probing-IP sweep':2, 'DDOS-smurf':3}#attr -1
     data_n = 0
     data = []
     normal_size = 0
     time_mark = []
+    ip_mark = []
 
     
     if train_file:
@@ -58,15 +61,18 @@ def genData(train_file):
             reader = csv.reader(f)
             next(reader)
             for row in reader:
-                if label[row[-1]] == 0:
-                    normal_size += 1
+                #if label[row[-1]] == -1:
+                #    normal_size += 1
                 
-                if train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != 0:
+                #if train_file == False or normal_size <= NORMAL_OFFSET or label[row[-1]] != -1:
+                if label[row[-1]] != -1:
                     #if label[row[-1]] <= 1:
                     #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
                     data_n+=1
                     data.append(row)
                     time_mark.append(row[0])
+                    #src_ip_mark.append(row[1])
+                    ip_mark.append(row[2])
                     if not row[9] in app_name:
                         app_name[row[9]] = app_id
                         app_id += 1
@@ -91,24 +97,90 @@ def genData(train_file):
         if int(data[datum_i][3]) == 0 and int(data[datum_i][4]) == 0:
             X[datum_i, x_i] = 1
         x_i+=1
-        #IP transformation
+        
+        #IP transformation    
+        '''
         ip = data[datum_i][1].split('.')
         for ip_str in ip:
             ip_n = bin(int(ip_str)+1024)
             for n in range(1, 9):
                 X[datum_i, x_i+8-n] = int(ip_n[-n])
             x_i+=8
+        
         ip = data[datum_i][2].split('.')
         for ip_str in ip:
             ip_n = bin(int(ip_str)+1024)
             for n in range(1, 9):
                 X[datum_i, x_i+8-n] = int(ip_n[-n])
             x_i+=8
-
+        '''
+        #port transform
+        '''
+        port_n = bin(int(data[datum_i][3])+1024*1024)
+        for n in range(1, 17):
+            X[datum_i, x_i+16-n] = int(port_n[-n])
+        x_i+=16
+        port_n = bin(int(data[datum_i][4])+1024*1024)
+        for n in range(1, 17):
+            X[datum_i, x_i+16-n] = int(port_n[-n])
+        x_i+=16
+        '''
         y[datum_i, label[data[datum_i][22]]] = 1
     
-    return X, y, time_mark
+    return X, y, time_mark, ip_mark#src_ip_mark, dst_ip_mark
 
+def genIPSeqData(X, y, ip_mark, test_label=False):
+    
+    ip_idx = {}
+
+    idx = 0
+    for ip in ip_mark:
+        if not ip in ip_idx:
+            ip_idx[ip] = []
+        ip_idx[ip].append(idx)
+        idx+=1
+    
+    data_seq = []
+    for ip in ip_idx.keys():
+        if len(ip_idx[ip]) > 10:
+            data_idx = []
+            count = 0
+
+            for i in ip_idx[ip]:
+                data_idx.append(i)
+                count += 1
+
+                if count == seq_step:
+                    count = 0
+                    data_seq.append(data_idx[:])
+                    data_idx = []
+
+            data_seq.append(data_idx[:])
+
+    len_seq = []
+    X_seq = np.zeros((len(data_seq), seq_step, num_feature))
+    y_seq = np.zeros((len(data_seq), seq_step, num_class))
+
+    for i in range(len(data_seq)):
+        len_seq.append(len(data_seq[i]))
+        for idx in data_seq[i]:
+            s = 0
+            X_seq[i, s, :] = X[idx, :]
+            y_seq[i, s, :] = y[idx, :]
+            s+=1
+    
+    if test_label:
+        total_samples = sum(len_seq)
+        print(total_samples)
+        y_ = np.zeros((total_samples, num_class))
+        s = 0
+        for i in range(len(data_seq)):
+            for idx in data_seq[i]:
+                y_[s, :] = y[idx, :]
+                s+=1
+        y_seq = np.argmax(y_, axis=1)
+
+    return X_seq, y_seq, len_seq
 
 
 def genTimeSeqData(X, y, time_mark):
@@ -194,15 +266,17 @@ def Normalization(X_train, X_test):
             X_test[:, x_i] = (X_test[:, x_i]-min_v)/(max_v-min_v)
 
 class rnnModel():
-    def __init__(self, time_step = 50):
+    def __init__(self, time_step = 100):
         unit_size = 16
 
         self.model = Sequential()
-        self.model.add(Conv1D(2*unit_size, 20, activation='relu', padding='same', input_shape=(time_step, pca_feature)))
+        self.model.add(Masking(mask_value=0.0, input_shape=(time_step, pca_feature)))
+        #self.model.add(Conv1D(2*unit_size, 20, activation='relu', padding='same', input_shape=(time_step, pca_feature)))
         #self.model.add(TimeDistributed(Dense(32, input_shape=(None, num_feature))))
         #self.model.add(LSTM(unit_size, return_sequences=True))
+        self.model.add(LSTM(unit_size, return_sequences=True))
         #self.model.add(Bidirectional(LSTM(unit_size, return_sequences=True), input_shape=(None, pca_feature)))
-        self.model.add(LSTM(unit_size, return_sequences=True, input_shape=(None, num_feature)))
+        #self.model.add(LSTM(unit_size, return_sequences=True, input_shape=(None, num_feature)))
         #self.model.add(TimeDistributed(Dense(8, activation='relu')))
         #self.model.add(Flatten())
         #self.model.add(Dense(256, activation='relu'))
@@ -244,25 +318,33 @@ if __name__ == '__main__':
         y = np.load(processed_trn_label)
         with open(time_trn, 'rb') as fp:
             time_mark = pickle.load(fp)
+        with open(ip_trn, 'rb') as fp:
+            ip_mark = pickle.load(fp)
     else:
         #X, y = genData(args.trn)
-        X, y, time_mark = genData(True)
+        X, y, time_mark, ip_mark = genData(True)
         np.save(processed_trn_data, X)
         np.save(processed_trn_label, y)
         with open(time_trn, 'wb') as fp:
             pickle.dump(time_mark, fp)
+        with open(ip_trn, 'wb') as fp:
+            pickle.dump(ip_mark, fp)
     
     if os.path.isfile(processed_tst_data) and os.path.isfile(processed_tst_label):
         X_tst = np.load(processed_tst_data)
         y_tst = np.load(processed_tst_label)
         with open(time_tst, 'rb') as fp:
             time_mark_tst = pickle.load(fp)
+        with open(ip_tst, 'rb') as fp:
+            ip_mark_tst = pickle.load(fp)
     else:
-        X_tst, y_tst, time_mark_tst = genData(False)
+        X_tst, y_tst, time_mark_tst, ip_mark_tst = genData(False)
         np.save(processed_tst_data, X_tst)
         np.save(processed_tst_label, y_tst)
         with open(time_tst, 'wb') as fp:
             pickle.dump(time_mark_tst, fp)
+        with open(ip_tst, 'wb') as fp:
+            pickle.dump(ip_mark_tst, fp)
 
     num_trn = len(X)
     num_tst = len(X_tst)
@@ -271,7 +353,7 @@ if __name__ == '__main__':
     data_split = int(split*len(X))
     num_val = len(X[data_split:])
     Normalization(X, X_tst)
-    X, X_tst = preprocess.PCA_transform(X, X_tst, pca_feature)
+    #X, X_tst = preprocess.PCA_transform(X, X_tst, pca_feature)
 
     if validation_check:
         shuffle_id = np.arange(num_trn)
@@ -283,10 +365,14 @@ if __name__ == '__main__':
         val_test = np.argmax(y[data_split:], axis=-1)
     else:
         X_train, y_train = genSeqData(X[:], y[:], True, max_len=seq_step)
-        #genTimeSeqData(X[:], y[:], time_mark)
+        #X_train, y_train, len_seq = genIPSeqData(X[:], y[:], ip_mark)
 
+    #print(len_seq)
+    #print(len(len_seq))
     X_test, y_test = genSeqData(X_tst, y_tst, False, max_len=seq_step, test_label=True)
-    
+    #X_test, y_test, len_seq_test = genIPSeqData(X_tst, y_tst, ip_mark_tst, test_label=True)
+    #num_tst = sum(len_seq_test)
+
     X, y = None, None
     X_tst, y_tst = None, None
     
@@ -319,10 +405,12 @@ if __name__ == '__main__':
         val_pred = model.testModel(X_val, num_val)
         learning.eval(val_test, val_pred)
     y_pred = model.testModel(X_test, num_tst)
+    #print(len(y_test))
+    #print(len(y_pred))
     learning.eval(y_test, y_pred)
 
     ## save model
     print('save model')
     #model.saveModel('bidirection_lstm.h5')
-    
+     
 
