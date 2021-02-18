@@ -7,6 +7,7 @@ import numpy as np
 import ipaddress
 import argparse
 import sys
+import pickle
 
 class Preprocessor:
     def __init__(self):
@@ -23,20 +24,30 @@ class Preprocessor:
     def one_hot_fit(self, df, enc_name, column_name):
         self.one_hot_enc_dict[enc_name] = OneHotEncoder(handle_unknown='ignore')
         self.one_hot_enc_dict[enc_name].fit(np.array(df[column_name].unique().tolist()).reshape(-1, 1))
+        pickle.dump(self.one_hot_enc_dict[enc_name], open(enc_name+'_encoder.pkl', 'wb'))
 
     def label_fit(self, df, enc_name, column_name):
         self.label_enc_dict[enc_name] = preprocessing.LabelEncoder()
         self.label_enc_dict[enc_name].fit(df[column_name].unique())
+        pickle.dump(self.label_enc_dict[enc_name], open(enc_name+'_encoder.pkl', 'wb'))
 
     def hashing_fit(self, n_components, df, enc_name, column_name):
         self.hash_enc_dict[enc_name] = HashingEncoder(n_components=n_components)
         self.hash_enc_dict[enc_name].fit(df[column_name])
 
-    def one_hot_transform(self, df, enc_name, column_name):
-        return self.one_hot_enc_dict[enc_name].transform(np.array(df[column_name]).reshape(-1,1)).toarray()
+    def one_hot_transform(self, df, enc_name, column_name, is_train):
+        if is_train:
+            return self.one_hot_enc_dict[enc_name].transform(np.array(df[column_name]).reshape(-1,1)).toarray()            
+        else:
+            enc = pickle.load(open(enc_name+'_encoder.pkl', 'rb'))
+            return enc.transform(np.array(df[column_name]).reshape(-1,1)).toarray()
 
-    def label_transform(self, df, enc_name, column_name):
-        return self.label_enc_dict[enc_name].transform(df[column_name].values)
+    def label_transform(self, df, enc_name, column_name, is_train):
+        if is_train:
+            return self.label_enc_dict[enc_name].transform(df[column_name].values)
+        else:
+            enc = pickle.load(open(enc_name+'_encoder.pkl', 'rb'))
+            return enc.transform(df[column_name].values)
 
     def hashing_transform(self, df, enc_name, column_name):
         return self.hash_enc_dict[enc_name].transform(df[column_name])
@@ -73,15 +84,18 @@ def inverse_one_hot_encoding(df, col):
     col_name = list(Processor.one_hot_enc_dict[col].inverse_transform(gen_lists).reshape(1, -1)[0])
     return col_name
 
-def data_transform(processor, df, app_name):
-    app = pd.DataFrame(columns=[app_name[x] for x in range(len(app_name))], data = processor.one_hot_transform(df, 'app', 'app'))
+def data_transform(processor, df, app_name, proto_name, is_train=True):
+    app = pd.DataFrame(columns=[app_name[x] for x in range(len(app_name))], data = processor.one_hot_transform(df, 'app', 'app', is_train))
     data = pd.concat([df.reset_index(drop=True), app.reset_index(drop=True)], axis=1)
-    proto = pd.DataFrame(columns=['proto'+str(proto_name[x]) for x in range(len(proto_name))], data = processor.one_hot_transform(df, 'proto', 'proto'))
+    proto = pd.DataFrame(columns=['proto'+str(proto_name[x]) for x in range(len(proto_name))], data = processor.one_hot_transform(df, 'proto', 'proto', is_train))
     data = pd.concat([data.reset_index(drop=True), proto.reset_index(drop=True)], axis=1)
-    new_label = processor.label_transform(data, 'label', 'label')
-    data['class'] = new_label
-    data.drop(['src', 'dst', 'time', 'app', 'proto', 'spt', 'dpt', 'label'], axis=1, inplace=True)
-    data.rename(columns={"class": "label"}, inplace=True)
+    if is_train:
+        new_label = processor.label_transform(data, 'label', 'label', is_train)
+        data['class'] = new_label
+        data.drop(['time', 'src', 'dst', 'app', 'proto', 'spt', 'dpt', 'label'], axis=1, inplace=True)
+        data.rename(columns={"class": "label"}, inplace=True)
+    else:
+        data.drop(['time', 'src', 'dst', 'app', 'proto', 'spt', 'dpt'], axis=1, inplace=True)
     return data
 
 # currently not efficient, since it have to send a api request to a webservice
@@ -152,42 +166,44 @@ def preprocess_ip_hashing(processor, df, fit=False):
 
 def parse_arg():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--trn', help='input training dataset', required=True)
-    parser.add_argument('--tst', help='input testing dataset', required=True)
-    parser.add_argument('--output_trn', help='output processed training dataset', required=True)
-    parser.add_argument('--output_tst', help='output processed testing dataset', required=True)
-
+    parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
+    parser.add_argument('--tst', nargs='+', help='input testing dataset', required=False)
+    parser.add_argument('--output_trn', help='output processed training dataset', required=False)
+    parser.add_argument('--pretrained', help='if there is pretrained encoder', default=0)
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = parse_arg()
     
-    # read data sets
-    df_trn = pd.read_csv(args.trn)
-    df_tst = pd.read_csv(args.tst)
-    n_class = len(df_trn['label'].unique())
+    if not args.pretrained:
+        # read data sets
+        df_trn = pd.concat([pd.read_csv(args.trn[i]) for i in range(len(args.trn))])
+        n_class = len(df_trn['label'].unique())
     
-    # preprocess data
-    Processor = Preprocessor()
-    df_trn = Processor.data_balance(df_trn)
-    Processor.one_hot_fit(df_trn, 'app', 'app')
-    Processor.one_hot_fit(df_trn, 'proto', 'proto')
-    Processor.label_fit(df_trn, 'label', 'label')
+        # preprocess data
+        Processor = Preprocessor()
+        df_trn = Processor.data_balance(df_trn)
+        Processor.one_hot_fit(df_trn, 'app', 'app')
+        Processor.one_hot_fit(df_trn, 'proto', 'proto')
+        Processor.label_fit(df_trn, 'label', 'label')
 
-    df_trn = add_features(df_trn)
-    df_tst = add_features(df_tst)
-
-    #df_trn = preprocess_ip_binarize(df_trn)
-    #df_tst = preprocess_ip_binarize(df_tst)
+        df_trn = add_features(df_trn)
+        app_name = inverse_one_hot_encoding(df_trn, 'app')
+        with open("app_name.txt", "wb") as f:
+            pickle.dump(app_name, f)
+        proto_name = inverse_one_hot_encoding(df_trn, 'proto')
+        with open("proto_name.txt", "wb") as f:
+            pickle.dump(proto_name, f)
+        data_trn = data_transform(Processor, df_trn, app_name, proto_name, True)
+        data_trn.to_csv(args.output_trn, index=False)
     
-    app_name = inverse_one_hot_encoding(df_trn, 'app')
-    proto_name = inverse_one_hot_encoding(df_trn, 'proto')
-    
-    data_trn = data_transform(Processor, df_trn, app_name)
-    data_tst = data_transform(Processor, df_tst, app_name)
-
-    print_class_name(Processor, n_class)
-
-    data_trn.to_csv(args.output_trn, index=False)
-    data_tst.to_csv(args.output_tst, index=False)
-
+    for tst_file in args.tst:
+        df_tst = pd.read_csv(tst_file)
+        df_tst = add_features(df_tst)
+        Processor = Preprocessor()
+        with open("app_name.txt", "rb") as f:
+            app_name = pickle.load(f)
+        with open("proto_name.txt", "rb") as f:
+            proto_name = pickle.load(f)
+        data_tst = data_transform(Processor, df_tst, app_name, proto_name, False)
+        data_tst.to_csv(tst_file[:-4]+'_processed.csv', index=False)
