@@ -169,7 +169,7 @@ def parse_arg():
     parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
     parser.add_argument('--tst', nargs='+', help='input testing dataset', required=False)
     parser.add_argument('--output_trn', help='output processed training dataset', required=False)
-    parser.add_argument('--pretrained', help='if there is pretrained encoder', default=0)
+    parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -186,7 +186,7 @@ if __name__ == '__main__':
         Processor.one_hot_fit(df_trn, 'app', 'app')
         Processor.one_hot_fit(df_trn, 'proto', 'proto')
         Processor.label_fit(df_trn, 'label', 'label')
-
+        print_class_name(Processor, n_class)
         df_trn = add_features(df_trn)
         app_name = inverse_one_hot_encoding(df_trn, 'app')
         with open("app_name.txt", "wb") as f:
@@ -196,7 +196,7 @@ if __name__ == '__main__':
             pickle.dump(proto_name, f)
         data_trn = data_transform(Processor, df_trn, app_name, proto_name, True)
         data_trn.to_csv(args.output_trn, index=False)
-    
+
     for tst_file in args.tst:
         df_tst = pd.read_csv(tst_file)
         df_tst = add_features(df_tst)
