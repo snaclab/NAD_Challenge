@@ -18,22 +18,21 @@ def parse_arg():
     parser.add_argument('--eval', help='whether evaluate predicted result (when exists ground truth)', default=True)
     return parser.parse_args()
 
-def evaluation(data_tst, y_pred, do_eval):
-    if do_eval:
-        label_map = {'DDOS-smurf':0, 'Normal':1, 'Probing-IP sweep':2, 'Probing-Nmap':3, 'Probing-Port sweep':4}
-        data_tst['label'] = data_tst['label'].apply(lambda x: label_map[x])
-        Y_test = data_tst[['label']].copy().values.reshape(1, -1)[0]
-        learning.eval(Y_test, y_pred)
-        macro_fbeta_score = fbeta_score(Y_test, y_pred, average='macro', beta=2)
-        print('macro F beta score: ', macro_fbeta_score)
-        cost_matrix = np.array([[0,2,1,1,1],[2,0,1,1,1],[2,1,0,1,1],[2,1,1,0,1],[2,1,1,1,0]])
-        conf_matrix = confusion_matrix(Y_test, y_pred)
-        cost = np.multiply(cost_matrix, conf_matrix)
-        print('cost matrix: ',cost)
-        print('total cost: ',np.sum(cost))
-        print('max cost: ',np.amax(cost))
-        print('log total / log max: ', math.log(np.sum(cost))/math.log(np.amax(cost)))
-        print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost))))+0.7*macro_fbeta_score)
+def evaluation(data_tst, y_pred):
+    label_map = {'DDOS-smurf':0, 'Normal':1, 'Probing-IP sweep':2, 'Probing-Nmap':3, 'Probing-Port sweep':4}
+    data_tst['label'] = data_tst['label'].apply(lambda x: label_map[x])
+    Y_test = data_tst[['label']].copy().values.reshape(1, -1)[0]
+    learning.eval(Y_test, y_pred)
+    macro_fbeta_score = fbeta_score(Y_test, y_pred, average='macro', beta=2)
+    print('macro F beta score: ', macro_fbeta_score)
+    cost_matrix = np.array([[0,2,1,1,1],[2,0,1,1,1],[2,1,0,1,1],[2,1,1,0,1],[2,1,1,1,0]])
+    conf_matrix = confusion_matrix(Y_test, y_pred)
+    cost = np.multiply(cost_matrix, conf_matrix)
+    print('cost matrix: ',cost)
+    print('total cost: ',np.sum(cost))
+    print('max cost: ',np.amax(cost))
+    print('log total / log max: ', math.log(np.sum(cost))/math.log(np.amax(cost)))
+    print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost))))+0.7*macro_fbeta_score)
 
 if __name__ == '__main__':
     args = parse_arg()
@@ -70,14 +69,13 @@ if __name__ == '__main__':
         ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
         y_pred = ans['pred'].values
         
-        # Evaluation
-        evaluation(data_tst, y_pred, args.eval)
-        
         # Transform label and save data
         label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
         test['label'] = ans['pred']
         test['label'] = test['label'].apply(lambda x: label_map[x])
         if args.eval:
+            # Evaluation
+            evaluation(data_tst, y_pred)
             test.to_csv(tst_file[:-4]+'_predicted.csv', index=False)
         else:
             test.to_csv(tst_file, index=False)
