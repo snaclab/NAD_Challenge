@@ -77,6 +77,7 @@ def add_features(df):
     df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
     df['flow_diff'] = df['flow_diff'].apply(lambda x: 0 if x==0 else (1 if x>0 else -1))
+    df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
 
     return df
 
@@ -132,20 +133,13 @@ def print_class_name(processor, n_class):
     for l in zip(classes, labels_name):
         print(l)
 
-def preprocess_ip_binarize(df):
-    df_src = pd.DataFrame(columns=['src'], data = df['src'])
-    df_dst = pd.DataFrame(columns=['dst'], data = df['dst'])
+def preprocess_ip_binarize(df, column):
+    _df = pd.DataFrame(columns=[column], data = df[column])
+    _df[column] = _df[column].apply(lambda x: ''.join([bin(int(i)+256)[3:] for i in x.split('.')]))
+    _df_split = _df[column].str.slice().apply(lambda i: pd.Series(list(i)))
+    _df_split = _df_split.rename(columns={x: '{}_{}'.format(column, idx) for idx, x in enumerate(_df_split.columns)})
 
-    df_src['src'] = df_src['src'].apply(lambda x: ''.join([bin(int(i)+256)[3:] for i in x.split('.')]))
-    df_dst['dst'] = df_dst['dst'].apply(lambda x: ''.join([bin(int(i)+256)[3:] for i in x.split('.')]))
-    
-    src_split = df_src['src'].str.slice().apply(lambda i: pd.Series(list(i)))
-    dst_split = df_dst['dst'].str.slice().apply(lambda i: pd.Series(list(i)))
-
-    src_split = src_split.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(src_split.columns)})
-    dst_split = dst_split.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(dst_split.columns)})
-
-    data = pd.concat([df.reset_index(drop=True), src_split.reset_index(drop=True), dst_split.reset_index(drop=True)], axis=1)
+    data = pd.concat([df.reset_index(drop=True), _df_split.reset_index(drop=True)], axis=1)
 
     return data
 
@@ -208,6 +202,7 @@ if __name__ == '__main__':
         proto_name = inverse_one_hot_encoding(df_trn, 'proto')
         with open("proto_name.txt", "wb") as f:
             pickle.dump(proto_name, f)
+
         data_trn = data_transform(Processor, df_trn, app_name, proto_name, True)
         data_trn.to_csv(args.output_trn, index=False)
 
@@ -219,5 +214,6 @@ if __name__ == '__main__':
             app_name = pickle.load(f)
         with open("proto_name.txt", "rb") as f:
             proto_name = pickle.load(f)
+        
         data_tst = data_transform(Processor, df_tst, app_name, proto_name, False)
         data_tst.to_csv(tst_file[:-4]+'_processed.csv', index=False)
