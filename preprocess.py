@@ -183,7 +183,7 @@ def parse_arg():
 if __name__ == '__main__':
     args = parse_arg()
     
-    if not args.pretrained:
+    if str(args.pretrained)=='False':
         # read data sets
         df_trn = pd.concat([pd.read_csv(args.trn[i]) for i in range(len(args.trn))])
         n_class = len(df_trn['label'].unique())

@@ -40,7 +40,7 @@ if __name__ == '__main__':
     n_class = 5
 
     # training process
-    if args.pretrained:
+    if str(args.pretrained)=='True':
         model = learning.load_model('model.pkl')
     else:
         data_trn = pd.read_csv(args.trn)
@@ -73,7 +73,7 @@ if __name__ == '__main__':
         label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
         test['label'] = ans['pred']
         test['label'] = test['label'].apply(lambda x: label_map[x])
-        if args.eval:
+        if str(args.eval)=='True':
             # Evaluation
             evaluation(data_tst, y_pred)
             test.to_csv(tst_file[:-4]+'_predicted.csv', index=False)
