@@ -16,7 +16,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="8"
 
 validation_check = True
 seq_step = 0
-num_feature = (15+32+45+1)*(1+seq_step*2)#+64#+32#+64+32
+num_feature = (15+32+45+5)*(1+seq_step*2)#+64#+32#+64+32
 pca_feature = num_feature#32
 num_class = 5
 NORMAL_OFFSET = int(180625*1.3)
@@ -70,109 +70,81 @@ def genData(train_file):
             reader = csv.reader(f)
             next(reader)
             for row in reader:
-                ##normal check in
-                '''
-                if train_file:
-                    check_in = False
-                    for offset in check_in_id:
-                        if label[row[-1]] == 1 and dat_id >= offset[0] and dat_id <= offset[1]:
-                            check_in = True
-                            break
-                    #normal_size += 1
-                
-                dat_id += 1
-                '''
-                #if train_file == False or check_in or label[row[-1]] != 1:
-                if train_file:
-                    if label[row[-1]] != 1:
-                        abnormal_id.append(dat_id)
-                    else:
-                        normal_id.append(dat_id)
-                    #if label[row[-1]] <= 1:
-                    #if label[row[-1]] != 0 or normal_size <= NORMAL_OFFSET:
-                    #data_n+=1
-                    data.append(row)
-                    #time_mark.append(row[0])
-                    #src_ip_mark.append(row[1])
-                    #dst_ip_mark.append(row[2])
-                    if not row[9] in app_name:
-                        app_name[row[9]] = app_id
-                        app_id += 1
-                    dat_id += 1
-                else:
-                    #if xgboost_pred[dat_id] != 1:
-                    data_n+=1
-                    data.append(row)
-                    #time_mark.append(row[0])
-                    #src_ip_mark.append(row[1])
-                    #dst_ip_mark.append(row[2])
-                    if not row[9] in app_name:
-                        app_name[row[9]] = app_id
-                        app_id += 1
-                    dat_id += 1
+                data_n+=1
+                data.append(row)
+                time_all = row[0].split()
+                day = time_all[0].split('-')
+                clock = time_all[1].split(':')
+                time_stamp = int(day[2])*24*60 + int(clock[0])*60 + int(clock[1])
+                print(time_stamp)
+                #time_mark.append(row[0])
+                #src_ip_mark.append(row[1])
+                #dst_ip_mark.append(row[2])
+                if not row[9] in app_name:
+                    app_name[row[9]] = app_id
+                    app_id += 1
+                #dat_id += 1
     
-    if train_file:
-        data_id = abnormal_id[:]
-        balanced_normal_id = random.sample(normal_id, NORMAL_OFFSET)
-        data_id.extend(balanced_normal_id)
-        data_n = len(data_id)
-    else:
-        data_id = range(data_n)
     X = np.zeros((data_n, num_feature))
     y = np.zeros((data_n, num_class))
     dat_i = 0
 
-    for datum_main in data_id:
+    for datum_i in range(data_n):
         x_i = 0
-        datum_seq = [datum_main]
-        for step in range(1, seq_step+1):
-            datum_seq.append(min(datum_main+step, dat_id-1))
-            datum_seq.append(max(datum_main-step, 0))
-        for datum_i in datum_seq:
-            for attr in range(5, 22):
-                #skip attr 8 and attr 9 first
-                if attr != 8 and attr != 9:
-                    X[dat_i, x_i] = int(data[datum_i][attr])
-                    x_i += 1
-            #one hot encoding of attr 8
-            X[dat_i, x_i+int(data[datum_i][8])] = 1
-            x_i += 32
-            #one hot encoding of attr 9
-            X[dat_i, x_i+int(app_name[data[datum_i][9]])] = 1
-            x_i += 45
+        #datum_seq = [datum_main]
+        #for step in range(1, seq_step+1):
+        #    datum_seq.append(min(datum_main+step, dat_id-1))
+        #    datum_seq.append(max(datum_main-step, 0))
+        #for datum_i in datum_seq:
+        for attr in range(5, 22):
+            #skip attr 8 and attr 9 first
+            if attr != 8 and attr != 9:
+                X[datum_i, x_i] = int(data[datum_i][attr])
+                x_i += 1
+        #one hot encoding of attr 8
+        X[datum_i, x_i+int(data[datum_i][8])] = 1
+        x_i += 32
+        #one hot encoding of attr 9
+        X[datum_i, x_i+int(app_name[data[datum_i][9]])] = 1
+        x_i += 45
         
-            #dst, src port == zero
-            if int(data[datum_i][3]) == 0 and int(data[datum_i][4]) == 0:
-                X[dat_i, x_i] = 1
-            x_i+=1
-            '''
-            #src inner IP
-            ip = data[datum_i][1].split('.')
-            if int(ip[0]) == 172 and int(ip[1]) >= 16 and int(ip[1]) < 32:
-                X[dat_i, x_i] = 1
-            elif int(ip[0]) == 192 and int(ip[1]) == 168:
-                X[dat_i, x_i] = 1
-            elif int(ip[0]) == 10:
-                X[dat_i, x_i] = 1
-            x_i+=1
-            #dst inner IP
-            ip = data[datum_i][2].split('.')
-            if int(ip[0]) == 172 and int(ip[1]) >= 16 and int(ip[1]) < 32:
-                X[dat_i, x_i] = 1
-            elif int(ip[0]) == 192 and int(ip[1]) == 168:
-                X[dat_i, x_i] = 1
-            elif int(ip[0]) == 10:
-                X[dat_i, x_i] = 1
-            x_i+=1
-            #dst IP end with 255:
-            if int(ip[-1]) == 255:
-                X[dat_i, x_i] = 1
-            x_i+=1
-            #flow diff
-            if int(data[datum_i][6])-int(data[datum_i][7]) > 0:
-                X[dat_i, x_i] = 1
-            x_i+=1
-            '''
+        #dst, src port == zero
+        if int(data[datum_i][3]) == 0 and int(data[datum_i][4]) == 0:
+            X[datum_i, x_i] = 1
+        x_i+=1
+        
+        #src inner IP
+        ip = data[datum_i][1].split('.')
+        if int(ip[0]) == 172 and int(ip[1]) >= 16 and int(ip[1]) < 32:
+            X[datum_i, x_i] = 1
+        elif int(ip[0]) == 192 and int(ip[1]) == 168:
+            X[datum_i, x_i] = 1
+        elif int(ip[0]) == 10:
+            X[datum_i, x_i] = 1
+        x_i+=1
+        #dst inner IP
+        ip = data[datum_i][2].split('.')
+        if int(ip[0]) == 172 and int(ip[1]) >= 16 and int(ip[1]) < 32:
+            X[datum_i, x_i] = 1
+        elif int(ip[0]) == 192 and int(ip[1]) == 168:
+            X[datum_i, x_i] = 1
+        elif int(ip[0]) == 10:
+            X[datum_i, x_i] = 1
+        x_i+=1
+        #dst IP end with 255:
+        if int(ip[-1]) == 255:
+            X[datum_i, x_i] = 1
+        x_i+=1
+        #flow diff
+        if int(data[datum_i][6])-int(data[datum_i][7]) > 0:
+            X[datum_i, x_i] = 1
+        x_i+=1
+        '''
+        #in == out == 0
+        if int(data[datum_i][6]) == int(data[datum_i][7]) == 0:
+            X[datum_i, x_i] = 1
+        x_i+=1
+        '''
 
         #IP transformation    
         '''
@@ -201,10 +173,39 @@ def genData(train_file):
             X[datum_i, x_i+16-n] = int(port_n[-n])
         x_i+=16
         '''
-        y[dat_i, label[data[datum_i][22]]] = 1
-        dat_i += 1
+        y[datum_i, label[data[datum_i][22]]] = 1
+        #dat_i += 1
 
     return X, y#, time_mark, ip_mark#src_ip_mark, dst_ip_mark
+def BalancedData(X, y):
+    
+    y_id = np.argmax(y, axis=-1)
+    normal_id = []
+    abnormal_id = []
+    #data_n = 0
+    
+    for i in range(len(y_id)):
+        if y_id[i] != 1:
+            abnormal_id.append(i)
+        else:
+            normal_id.append(i)
+    
+    data_id = abnormal_id[:]
+    balanced_normal_id = random.sample(normal_id, NORMAL_OFFSET)
+    data_id.extend(balanced_normal_id)
+    data_n = len(data_id)
+
+
+    X_bal = np.zeros((data_n, num_feature))
+    y_bal = np.zeros((data_n, num_class))
+    dat_i = 0
+
+    for datum_i in data_id:
+        X_bal[dat_i, :] = X[datum_i, :]
+        y_bal[dat_i, :] = y[datum_i, :]
+        dat_i += 1
+
+    return X_bal, y_bal
 
 def genIPSeqData(X, y, ip_mark, test_label=False):
     
@@ -336,6 +337,7 @@ def genSeqData(X, y, overlap = True, max_len=50, test_label = False):
 def Normalization(X_train, X_test):
     ##normalization -> [0, 1]
     for x_i in range(15):
+        
         concat = np.zeros(len(X_train)+len(X_test))
         concat[:len(X_train)] = X_train[:, x_i]
         concat[len(X_train):] = X_test[:, x_i]
@@ -351,13 +353,14 @@ def Normalization(X_train, X_test):
             X_train[:, x_i] = (X_train[:, x_i]-min_v)/(max_v-min_v)
             X_test[:, x_i] = (X_test[:, x_i]-min_v)/(max_v-min_v)
         '''
+
 class nnModel():
-    def __init__(self, time_step = 100):
+    def __init__(self):
         unit_size = 16
 
         self.model = Sequential()
         self.model.add(Dense(32, activation='relu', input_shape=(num_feature,)))
-        #self.model.add(Dense(32, activation='relu'))
+        self.model.add(Dense(32, activation='relu'))
         #self.model.add(Dense(32, activation='relu'))
         self.model.add(Dense(num_class, activation='softmax'))
         #self.model.add(Masking(mask_value=0.0, input_shape=(time_step, pca_feature)))
@@ -391,7 +394,7 @@ class nnModel():
         #for i in range(num_tst):
         #    y_value[i, :] = results[int(i/seq), i%seq, :]
         y_pred = np.argmax(results, axis=-1)
-        return y_pred
+        return y_pred, results
 
     def saveModel(self, model_n):
         self.model.save(model_n)
@@ -437,16 +440,21 @@ if __name__ == '__main__':
         #    pickle.dump(time_mark_tst, fp)
         #with open(ip_tst, 'wb') as fp:
         #    pickle.dump(ip_mark_tst, fp)
-
+    
     num_trn = len(X)
     num_tst = len(X_tst)
     print('num training data: ' + str(num_trn)) 
     print('num testing data: ' + str(num_tst)) 
+    Normalization(X, X_tst)
+    X, y = BalancedData(X, y)
+    num_trn = len(X)
+    print('balanced num training data: ' + str(num_trn)) 
     data_split = int(split*len(X))
     num_val = len(X[data_split:])
-    Normalization(X, X_tst)
     #X, X_tst = preprocess.PCA_transform(X, X_tst, pca_feature)
+    '''
     y_test = np.argmax(y_tst, axis=-1)
+    
     if validation_check:
         shuffle_id = np.arange(num_trn)
         np.random.seed(7)
@@ -463,8 +471,8 @@ if __name__ == '__main__':
         #    count[lab]+=1
         #print(count)
     
-    else:
-        X_train, y_train = genSeqData(X[:], y[:], True, max_len=seq_step)
+    #else:
+    #    X_train, y_train = genSeqData(X[:], y[:], True, max_len=seq_step)
         #X_train, y_train, len_seq = genIPSeqData(X[:], y[:], ip_mark)
      
     #print(len_seq)
@@ -505,10 +513,10 @@ if __name__ == '__main__':
     ## testing
     print('testing')
     if validation_check:
-        val_pred = model.testModel(X_val)
+        val_pred, val_prob = model.testModel(X_val)
         learning.eval(val_test, val_pred)
     
-    y_pred = model.testModel(X_tst)
+    y_pred, y_prob = model.testModel(X_tst)
     #print(len(y_test))
     #print(len(y_pred))
     #with open('xgboost_pred.pickle', 'rb') as fp:
@@ -524,14 +532,14 @@ if __name__ == '__main__':
     #        xgboost_value[dat_i, 0] = (xgboost_value[dat_i, 0]+y_v[y_i, 0])/2
     #        y_i+=1
 
-    #with open('xgrnn_pred.pickle', 'wb') as fp:
-    #    pickle.dump(xgboost_value, fp)
+    with open('nn_pred.pickle', 'wb') as fp:
+        pickle.dump(y_prob, fp)
 
     learning.eval(y_test, y_pred)
 
     ## save model
     print('save model')
-    #model.saveModel('bidirection_lstm.h5')
-    
-
+    model.saveModel('nn_model.h5')
+        
+    '''
 
