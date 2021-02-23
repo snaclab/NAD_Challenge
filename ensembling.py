@@ -1,7 +1,7 @@
 import pandas as pd
-from main import evaluation
 
 def ensemble(base, do_eval, test_path, xgb_path, nn_path):
+    from main import evaluation
     xgb = pd.read_csv(xgb_path)
     nn = pd.read_csv(nn_path)
     if base == 'xgb':
