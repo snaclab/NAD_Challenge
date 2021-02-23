@@ -26,7 +26,7 @@ pca_feature = num_feature#32
 num_class = 5
 #NORMAL_OFFSET = #int(180625*1.3)
 #app_name = {}
-app_encoder = 'app_encoder.pickle'
+app_encoder = 'app_encoder.pkl'
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
@@ -461,6 +461,8 @@ if __name__ == '__main__':
             X, y = genData(args.trn, app_name)
             np.save(processed_trn_data, X)
             np.save(processed_trn_label, y)
+            with open(app_encoder, 'wb') as fp:
+                pickle.dump(app_name, fp)    
             #np.save(time_trn, time_mark)
     
         if os.path.isfile(processed_tst_data):
@@ -473,6 +475,8 @@ if __name__ == '__main__':
                 X_tst, y_tst = genData(args.tst, app_name)
                 np.save(processed_tst_data, X_tst)
                 np.save(processed_tst_label, y_tst)
+                with open(app_encoder, 'wb') as fp:
+                    pickle.dump(app_name, fp)    
             else:
                 X_tst, _ = genData(args.tst, app_name, False)
                 np.save(processed_tst_data, X_tst)
@@ -493,8 +497,8 @@ if __name__ == '__main__':
         data_split = int(split*len(X))
         num_val = len(X[data_split:])
         #X, X_tst = preprocess.PCA_transform(X, X_tst, pca_feature)
-    
-        y_test = np.argmax(y_tst, axis=-1)
+        if validation_check:
+            y_test = np.argmax(y_tst, axis=-1)
     
         if validation_check:
             shuffle_id = np.arange(num_trn)
@@ -537,6 +541,8 @@ if __name__ == '__main__':
         print('load model')
         model.loadModel('nn.h5')
         norm_std = np.load('norm_std.npy')
+        with open(app_encoder, 'rb') as fp:
+            app_name = pickle.load(fp)
     
     ## training (adust hyper parameters)
     epochs = 35
@@ -546,8 +552,8 @@ if __name__ == '__main__':
         print('testing')
         for tst_file in args.tst:
             data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
-            with open(app_encoder, 'rb') as fp:
-                app_name = pickle.load(fp)
+            #with open(app_encoder, 'rb') as fp:
+            #    app_name = pickle.load(fp)
             X, _ = genData([tst_file], app_name, False)
             for x_i in range(15):
                 X[:, x_i] = (X[:, x_i])/norm_std[x_i]
@@ -580,7 +586,7 @@ if __name__ == '__main__':
             # Evaluation
             #dat_tst = data_tst.copy()
             #main_.evaluation(dat_tst, y_pred)
-            test.to_csv(tst_file[:-4]+'_nn_predicted.csv', index=False)
+            test.to_csv(tst_file[:-4]+'_nn.csv', index=False)
     else:
         print('training')
         for ep in range(epochs):
@@ -611,6 +617,6 @@ if __name__ == '__main__':
         print('save model')
         model.saveModel('nn.h5')
         np.save('norm_std.npy', norm_std)        
-        with open(app_encoder, 'wb') as fp:
-            pickle.dump(app_name, fp)    
+        #with open(app_encoder, 'wb') as fp:
+        #    pickle.dump(app_name, fp)    
 
