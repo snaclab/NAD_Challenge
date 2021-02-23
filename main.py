@@ -9,6 +9,7 @@ import datetime
 from sklearn.metrics import fbeta_score
 import math
 from sklearn.metrics import confusion_matrix
+from ensembling import ensemble
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process dataset name')
@@ -76,10 +77,10 @@ if __name__ == '__main__':
         if str(args.eval)=='True':
             # Evaluation
             evaluation(data_tst, y_pred)
-            test.to_csv(tst_file[:-4]+'_predicted.csv', index=False)
-        else:
-            test.to_csv(tst_file, index=False)
-    
+        test.to_csv(tst_file+'_xgb.csv', index=False)
+        
+        ensemble('xgb', args.eval, tst_file, tst_file+'_xgb.csv', tst_file+'_nn.csv')
+        
     '''
     # plot feature importance
     model.get_booster().feature_names = list(data_trn.columns)[:-1]

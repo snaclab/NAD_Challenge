@@ -9,6 +9,7 @@ import ipaddress
 import argparse
 import sys
 import pickle
+import multiprocessing
 
 class Preprocessor:
     def __init__(self):
@@ -171,6 +172,42 @@ def preprocess_ip_hashing(processor, df, fit=False):
 
     return data
 
+def worker(c, return_dict, df):
+    L = [df.loc[len(df)-1, c]]
+    Max = df.loc[len(df)-1, c]
+    for idx in reversed(df.iloc[:-1, :].index):
+        if df.loc[idx, c] == 0:
+            L.append(Max)
+            Max = 0
+        else:
+            if df.loc[idx+1, c] == df.loc[idx, c]:
+                L.append(Max)
+            elif df.loc[idx+1, c] == df.loc[idx, c] + 1:
+                L.append(Max)
+            else:
+                Max = df.loc[idx, c]
+                L.append(Max)
+    return_dict[c] = L[::-1]
+
+def algin_cnt_feature(df):
+    cn = ['cnt_dst', 'cnt_src', 'cnt_serv_src',\
+    'cnt_serv_dst', 'cnt_dst_slow', 'cnt_src_slow', 'cnt_serv_src_slow',\
+    'cnt_serv_dst_slow', 'cnt_dst_conn', 'cnt_src_conn',\
+    'cnt_serv_src_conn', 'cnt_serv_dst_conn']
+
+    jobs = []
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    for c in cn:
+        p = multiprocessing.Process(target=worker, args=(c, return_dict, df))
+        jobs.append(p)
+        p.start()
+    for proc in jobs:
+        proc.join()
+    for c in cn:
+        df[c+'_max'] = return_dict[c]
+    
+    return df
 
 def parse_arg():
     parser = argparse.ArgumentParser()
