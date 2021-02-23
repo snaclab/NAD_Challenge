@@ -26,12 +26,12 @@ class Preprocessor:
     def one_hot_fit(self, df, enc_name, column_name):
         self.one_hot_enc_dict[enc_name] = OneHotEncoder(handle_unknown='ignore')
         self.one_hot_enc_dict[enc_name].fit(np.array(df[column_name].unique().tolist()).reshape(-1, 1))
-        pickle.dump(self.one_hot_enc_dict[enc_name], open(enc_name+'_encoder.pkl', 'wb'))
+        pickle.dump(self.one_hot_enc_dict[enc_name], open(enc_name+'_enc.pkl', 'wb'))
 
     def label_fit(self, df, enc_name, column_name):
         self.label_enc_dict[enc_name] = preprocessing.LabelEncoder()
         self.label_enc_dict[enc_name].fit(df[column_name].unique())
-        pickle.dump(self.label_enc_dict[enc_name], open(enc_name+'_encoder.pkl', 'wb'))
+        pickle.dump(self.label_enc_dict[enc_name], open(enc_name+'_enc.pkl', 'wb'))
 
     def hashing_fit(self, n_components, df, enc_name, column_name):
         self.hash_enc_dict[enc_name] = HashingEncoder(n_components=n_components)
@@ -41,14 +41,14 @@ class Preprocessor:
         if is_train:
             return self.one_hot_enc_dict[enc_name].transform(np.array(df[column_name]).reshape(-1,1)).toarray()            
         else:
-            enc = pickle.load(open(enc_name+'_encoder.pkl', 'rb'))
+            enc = pickle.load(open(enc_name+'_enc.pkl', 'rb'))
             return enc.transform(np.array(df[column_name]).reshape(-1,1)).toarray()
 
     def label_transform(self, df, enc_name, column_name, is_train):
         if is_train:
             return self.label_enc_dict[enc_name].transform(df[column_name].values)
         else:
-            enc = pickle.load(open(enc_name+'_encoder.pkl', 'rb'))
+            enc = pickle.load(open(enc_name+'_enc.pkl', 'rb'))
             return enc.transform(df[column_name].values)
 
     def hashing_transform(self, df, enc_name, column_name):
@@ -78,7 +78,7 @@ def add_features(df):
     df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
     df['flow_diff'] = df['flow_diff'].apply(lambda x: 0 if x==0 else (1 if x>0 else -1))
-    df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
+    #df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
 
     return df
 
