@@ -5,18 +5,19 @@ import numpy as np
 import learning
 import preprocess
 import argparse
-from keras.models import Sequential
+from keras.models import Sequential, load_model
 from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten, Masking
 import csv
 import os
 import random
 import pickle
 
-os.environ["CUDA_VISIBLE_DEVICES"]="8"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 validation_check = True
 seq_step = 0
-num_feature = (15+32+45+5)*(1+seq_step*2)#+64#+32#+64+32
+main_feature = 15+32+45+4
+num_feature = (main_feature)*(1+seq_step*2)#+64#+32#+64+32
 pca_feature = num_feature#32
 num_class = 5
 NORMAL_OFFSET = int(180625*1.3)
@@ -25,10 +26,10 @@ processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
 processed_tst_label = 'y_test.npy'
-time_trn = 'time_mark.pickle'
-time_tst = 'time_mark_test.pickle'
-ip_trn = 'ip_mark.pickle'
-ip_tst = 'ip_mark_test.pickle'
+time_trn = 'time_mark.npy'
+time_tst = 'time_mark_test.npy'
+#ip_trn = 'ip_mark.pickle'
+#ip_tst = 'ip_mark_test.pickle'
 
 
 def parse_arg():
@@ -70,23 +71,28 @@ def genData(train_file):
             reader = csv.reader(f)
             next(reader)
             for row in reader:
-                data_n+=1
                 data.append(row)
-                time_all = row[0].split()
-                day = time_all[0].split('-')
-                clock = time_all[1].split(':')
-                time_stamp = int(day[2])*24*60 + int(clock[0])*60 + int(clock[1])
-                print(time_stamp)
+
+                #time_all = row[0].split()
+                #day = time_all[0].split('-')
+                #clock = time_all[1].split(':')
+                #time_stamp = int(day[2])*24*60*60 + int(clock[0])*60*60 + int(clock[1])*60 + int(clock[2])
+                #time_mark.append((time_stamp, data_n))
+                
+                #print(time_stamp)
                 #time_mark.append(row[0])
                 #src_ip_mark.append(row[1])
                 #dst_ip_mark.append(row[2])
                 if not row[9] in app_name:
                     app_name[row[9]] = app_id
                     app_id += 1
+                data_n+=1
                 #dat_id += 1
     
-    X = np.zeros((data_n, num_feature))
+    X = np.zeros((data_n, main_feature))
     y = np.zeros((data_n, num_class))
+    time_mark = np.zeros((data_n, 2), dtype=np.int64)
+    #time_mark = np.zeros((data_n, 2), dtype=np.int64)
     dat_i = 0
 
     for datum_i in range(data_n):
@@ -131,10 +137,12 @@ def genData(train_file):
         elif int(ip[0]) == 10:
             X[datum_i, x_i] = 1
         x_i+=1
+        '''
         #dst IP end with 255:
         if int(ip[-1]) == 255:
             X[datum_i, x_i] = 1
         x_i+=1
+        '''
         #flow diff
         if int(data[datum_i][6])-int(data[datum_i][7]) > 0:
             X[datum_i, x_i] = 1
@@ -175,164 +183,168 @@ def genData(train_file):
         '''
         y[datum_i, label[data[datum_i][22]]] = 1
         #dat_i += 1
+        
+        time_all = data[datum_i][0].split()
+        day = time_all[0].split('-')
+        clock = time_all[1].split(':')
+        time_mark[datum_i, 0] = int(day[2])*24*60*60 + int(clock[0])*60*60 + int(clock[1])*60 + int(clock[2])
+        
+        ip = data[datum_i][1].split('.')
+        time_mark[datum_i, 1] = int(ip[0])*(256**3)+int(ip[1])*(256**2)+int(ip[2])*(256)+int(ip[3])
+    ##argsort does not need if original file is (close to) sorted.
+    #time_id = np.argsort(time_stamp, kind='stable')
+    #time_mark[:, 0] = time_stamp[:]
+    #time_mark[:, 1] = time_id[:]
 
-    return X, y#, time_mark, ip_mark#src_ip_mark, dst_ip_mark
-def BalancedData(X, y):
+    return X, y, time_mark#, ip_mark#src_ip_mark, dst_ip_mark
+
+def BalancedData(X, y, time_mark, train_file=True):
     
     y_id = np.argmax(y, axis=-1)
+    #id_actual_map = {}
+    #for i in range(len(time_id)):
+    #    id_actual_map[time_id[i, 1]] = i
     normal_id = []
     abnormal_id = []
-    #data_n = 0
+    seq_id = {}
     
     for i in range(len(y_id)):
-        if y_id[i] != 1:
-            abnormal_id.append(i)
-        else:
-            normal_id.append(i)
-    
-    data_id = abnormal_id[:]
-    balanced_normal_id = random.sample(normal_id, NORMAL_OFFSET)
-    data_id.extend(balanced_normal_id)
-    data_n = len(data_id)
+        if train_file:
+            if y_id[i] != 1:
+                #abnormal_id.append(time_id[i][1])
+                abnormal_id.append(i)
+            else:
+                #normal_id.append(time_id[i][1])
+                normal_id.append(i)
+        
+        ##find seq
+        if seq_step > 0:
+            #seq_id[i]=[]
+            
 
+            '''
+            step = 0
+            prev_step = i
+            cur_step = i - 1
+            while step < seq_step:
+                if cur_step >= 0:
+                    if abs(time_mark[i, 0]-time_mark[cur_step, 0]) < 5:
+                        if time_mark[i, 1] == time_mark[cur_step, 1]:
+                            seq_id[i].append(cur_step)
+                            prev_step = cur_step
+                            step += 1
+                        cur_step -= 1
+                    else:
+                        seq_id[i].append(prev_step)
+                        step+=1
+                else:
+                    seq_id[i].append(prev_step)
+                    step+=1
+
+            step = 0
+            prev_step = i
+            cur_step = i + 1
+            while step < seq_step:
+                if cur_step < len(y_id):
+                    if abs(time_mark[i, 0]-time_mark[cur_step, 0]) < 5:
+                        if time_mark[i, 1] == time_mark[cur_step, 1]:
+                            seq_id[i].append(cur_step)
+                            prev_step = cur_step
+                            step += 1
+                        cur_step += 1
+                    else:
+                        seq_id[i].append(prev_step)
+                        step += 1
+                else:
+                    seq_id[i].append(prev_step)
+                    step += 1
+                    
+
+            
+            bound_id = [i, i]
+            for step in range(1, seq_step+1):
+                if i-step >= 0:
+                    if abs(time_mark[i]-time_mark[i-step]) < 5*60:
+                        bound_id[0] = i-step
+                seq_id[i].append(bound_id[0])
+                if i+step < len(y_id):
+                    if abs(time_mark[i]-time_mark[i+step]) < 5*60:
+                        bound_id[1] = i+step
+                seq_id[i].append(bound_id[1])
+            '''
+    if train_file:
+        data_id = abnormal_id[:]
+        balanced_normal_id = random.sample(normal_id, NORMAL_OFFSET)
+        data_id.extend(balanced_normal_id)
+        data_n = len(data_id)
+    else:
+        data_id = list(range(len(y_id)))
+        data_n = len(y_id)
+
+
+    ##find seq
+    
+    if seq_step > 0:
+        for i in data_id:
+            seq_id[i]=[]
+            
+            step = 0
+            prev_step = i
+            cur_step = i - 1
+            while step < seq_step:
+                if cur_step >= 0:
+                    if abs(time_mark[i, 0]-time_mark[cur_step, 0]) < 2:
+                        if time_mark[i, 1] == time_mark[cur_step, 1]:
+                            seq_id[i].append(cur_step)
+                            prev_step = cur_step
+                            step += 1
+                        cur_step -= 1
+                    else:
+                        seq_id[i].append(prev_step)
+                        step+=1
+                else:
+                    seq_id[i].append(prev_step)
+                    step+=1
+
+            step = 0
+            prev_step = i
+            cur_step = i + 1
+            while step < seq_step:
+                if cur_step < len(y_id):
+                    if abs(time_mark[i, 0]-time_mark[cur_step, 0]) < 2:
+                        if time_mark[i, 1] == time_mark[cur_step, 1]:
+                            seq_id[i].append(cur_step)
+                            prev_step = cur_step
+                            step += 1
+                        cur_step += 1
+                    else:
+                        seq_id[i].append(prev_step)
+                        step += 1
+                else:
+                    seq_id[i].append(prev_step)
+                    step += 1
+                    
+    
 
     X_bal = np.zeros((data_n, num_feature))
     y_bal = np.zeros((data_n, num_class))
+    
     dat_i = 0
-
     for datum_i in data_id:
-        X_bal[dat_i, :] = X[datum_i, :]
+        x_i = 0
+        X_bal[dat_i, x_i:x_i+main_feature] = X[datum_i, :]
         y_bal[dat_i, :] = y[datum_i, :]
+        
+        ##add seq
+        if seq_step > 0:
+            x_i += main_feature
+            for step_id in seq_id[datum_i]:
+                X_bal[dat_i, x_i:x_i+main_feature] = X[step_id, :]
+                x_i += main_feature
+
         dat_i += 1
 
     return X_bal, y_bal
-
-def genIPSeqData(X, y, ip_mark, test_label=False):
-    
-    ip_idx = {}
-
-    idx = 0
-    for ip in ip_mark:
-        if not ip in ip_idx:
-            ip_idx[ip] = []
-        ip_idx[ip].append(idx)
-        idx+=1
-    
-    data_seq = []
-    for ip in ip_idx.keys():
-        if len(ip_idx[ip]) > 10:
-            data_idx = []
-            count = 0
-
-            for i in ip_idx[ip]:
-                data_idx.append(i)
-                count += 1
-
-                if count == seq_step:
-                    count = 0
-                    data_seq.append(data_idx[:])
-                    data_idx = []
-
-            data_seq.append(data_idx[:])
-
-    len_seq = []
-    X_seq = np.zeros((len(data_seq), seq_step, num_feature))
-    y_seq = np.zeros((len(data_seq), seq_step, num_class))
-
-    for i in range(len(data_seq)):
-        len_seq.append(len(data_seq[i]))
-        for idx in data_seq[i]:
-            s = 0
-            X_seq[i, s, :] = X[idx, :]
-            y_seq[i, s, :] = y[idx, :]
-            s+=1
-    
-    if test_label:
-        total_samples = sum(len_seq)
-        print(total_samples)
-        y_ = np.zeros((total_samples, num_class))
-        s = 0
-        for i in range(len(data_seq)):
-            for idx in data_seq[i]:
-                y_[s, :] = y[idx, :]
-                s+=1
-        y_seq = np.argmax(y_, axis=1)
-
-    return X_seq, y_seq, len_seq
-
-
-def genTimeSeqData(X, y, time_mark):
-    ##split data by time mark
-    ##1 minute as a unit
-    #day = None
-    #hms = [-1, -1, -1]
-    idx = 0
-    dateindex = {}
-
-    for t in time_mark:
-        date = t.split()
-        day = date[0]
-        hms = date[1].split(':')
-        
-        if not day in dateindex:
-            dateindex[day] = []
-            for hr in range(24):
-                empty = []
-                for mi in range(60):
-                    empty.append([])
-                dateindex[day].append(empty)
-        dateindex[day][int(hms[0])][int(hms[1])].append(idx)
-        idx += 1
-
-    for d in dateindex.keys():
-        for hr in range(24):
-            for mi in range(60):
-                
-                if len(dateindex[d][hr][mi]) > 0:
-                    print(len(dateindex[d][hr][mi]))
-    
-
-
-def genSeqData(X, y, overlap = True, max_len=50, test_label = False):
-    ##turn data into a batch of sequences
-    #  1       1, 2           |  1, 2
-    #  2       2, 3           |  3, 4
-    #  3   ->  3, 4  (overlap)|  5, 0 (not overlap)
-    #  4       4, 5           |
-    #  5                      |
-
-    data_n = len(X)
-    if overlap:
-        X_seq = np.zeros((data_n-max_len+1, max_len, pca_feature))
-        y_seq = np.zeros((data_n-max_len+1, max_len, num_class))
-
-        for datum_i in range(data_n-max_len+1):
-            X_seq[datum_i, :, :] = X[datum_i:datum_i+max_len, :]
-            y_seq[datum_i, :, :] = y[datum_i:datum_i+max_len, :]
-    else:
-        X_seq = np.zeros((int(np.ceil(data_n/max_len)), max_len, pca_feature))
-        y_seq = np.zeros((int(np.ceil(data_n/max_len)), max_len, num_class))
-        
-        x_i = 0
-        if data_n%max_len != 0:
-            for datum_i in range(int(np.ceil(data_n/max_len)-1)):
-                X_seq[datum_i, :, :] = X[x_i:x_i+max_len, :]
-                y_seq[datum_i, :, :] = y[x_i:x_i+max_len, :]
-                x_i += max_len
-            
-            X_seq[-1, :data_n%max_len, :] = X[x_i:, :]
-            y_seq[-1, :data_n%max_len, :] = y[x_i:, :]
-        
-        else:
-            for datum_i in range(int(np.ceil(data_n/max_len))):
-                X_seq[datum_i, :, :] = X[x_i:x_i+max_len, :]
-                y_seq[datum_i, :, :] = y[x_i:x_i+max_len, :]
-                x_i += max_len
-
-            
-    if test_label:
-        y_seq = np.argmax(y, axis=1)
-    return X_seq, y_seq
 
 def Normalization(X_train, X_test):
     ##normalization -> [0, 1]
@@ -398,6 +410,8 @@ class nnModel():
 
     def saveModel(self, model_n):
         self.model.save(model_n)
+    def loadModel(self, model_n):
+        self.model = load_model(model_n)
 
 if __name__ == '__main__':
     
@@ -411,15 +425,17 @@ if __name__ == '__main__':
     if os.path.isfile(processed_trn_data) and os.path.isfile(processed_trn_label):
         X = np.load(processed_trn_data)
         y = np.load(processed_trn_label)
+        time_mark = np.load(time_trn)
         #with open(time_trn, 'rb') as fp:
         #    time_mark = pickle.load(fp)
         #with open(ip_trn, 'rb') as fp:
         #    ip_mark = pickle.load(fp)
     else:
         #X, y = genData(args.trn)
-        X, y = genData(True)
+        X, y, time_mark = genData(True)
         np.save(processed_trn_data, X)
         np.save(processed_trn_label, y)
+        np.save(time_trn, time_mark)
         #with open(time_trn, 'wb') as fp:
         #    pickle.dump(time_mark, fp)
         #with open(ip_trn, 'wb') as fp:
@@ -428,14 +444,16 @@ if __name__ == '__main__':
     if os.path.isfile(processed_tst_data) and os.path.isfile(processed_tst_label):
         X_tst = np.load(processed_tst_data)
         y_tst = np.load(processed_tst_label)
+        time_mark_tst = np.load(time_tst)
         #with open(time_tst, 'rb') as fp:
         #    time_mark_tst = pickle.load(fp)
         #with open(ip_tst, 'rb') as fp:
         #    ip_mark_tst = pickle.load(fp)
     else:
-        X_tst, y_tst = genData(False)
+        X_tst, y_tst, time_mark_tst = genData(False)
         np.save(processed_tst_data, X_tst)
         np.save(processed_tst_label, y_tst)
+        np.save(time_tst, time_mark_tst)
         #with open(time_tst, 'wb') as fp:
         #    pickle.dump(time_mark_tst, fp)
         #with open(ip_tst, 'wb') as fp:
@@ -446,13 +464,17 @@ if __name__ == '__main__':
     print('num training data: ' + str(num_trn)) 
     print('num testing data: ' + str(num_tst)) 
     Normalization(X, X_tst)
-    X, y = BalancedData(X, y)
+    #print(time_mark)
+    
+    X, y = BalancedData(X, y, time_mark, True)
+    if seq_step > 0:
+        X_tst, y_tst = BalancedData(X_tst, y_tst, time_mark_tst, False)
     num_trn = len(X)
     print('balanced num training data: ' + str(num_trn)) 
     data_split = int(split*len(X))
     num_val = len(X[data_split:])
     #X, X_tst = preprocess.PCA_transform(X, X_tst, pca_feature)
-    '''
+    
     y_test = np.argmax(y_tst, axis=-1)
     
     if validation_check:
@@ -490,9 +512,13 @@ if __name__ == '__main__':
     print('build model')
     model = nnModel()
     
+    ## load model 
+    print('load model')
+    model.loadModel('nn_nodst255_model.h5')
+    
     ## training (adust hyper parameters)
     print('training')
-    epochs = 35
+    epochs = 0#35
     batch_size = 128#2048 is upper bound
 
 
@@ -532,14 +558,14 @@ if __name__ == '__main__':
     #        xgboost_value[dat_i, 0] = (xgboost_value[dat_i, 0]+y_v[y_i, 0])/2
     #        y_i+=1
 
-    with open('nn_pred.pickle', 'wb') as fp:
-        pickle.dump(y_prob, fp)
+    #with open('nn_single_pred.pickle', 'wb') as fp:
+    #    pickle.dump(y_prob, fp)
 
     learning.eval(y_test, y_pred)
 
     ## save model
     print('save model')
-    model.saveModel('nn_model.h5')
+    #model.saveModel('nn_single_model.h5')
         
-    '''
+    
 
