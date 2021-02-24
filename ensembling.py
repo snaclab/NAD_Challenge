@@ -13,7 +13,7 @@ def ensemble(base, do_eval, test_path, xgb_path, nn_path):
         nn.loc[idx, 'label'] = 'Probing-Port sweep'
         model = nn.copy()
     
-    if do_eval:
+    if str(do_eval)=='True':
         label_map = {'DDOS-smurf':0, 'Normal':1, 'Probing-IP sweep':2, 'Probing-Nmap':3, 'Probing-Port sweep':4}
         model['label'] = model['label'].apply(lambda x: label_map[x])
         y_pred = model['label'].values

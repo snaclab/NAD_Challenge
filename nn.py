@@ -551,7 +551,7 @@ if __name__ == '__main__':
     if pretrained:
         print('testing')
         for tst_file in args.tst:
-            data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
+            #data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
             #with open(app_encoder, 'rb') as fp:
             #    app_name = pickle.load(fp)
             X, _ = genData([tst_file], app_name, False)
