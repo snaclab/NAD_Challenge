@@ -15,9 +15,9 @@ import pandas as pd
 import datetime
 
 ##remove these
-#import main_
-#os.environ["CUDA_VISIBLE_DEVICES"]="0"
-validation_check = False
+import main_
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+validation_check = True
 
 seq_step = 0
 main_feature = 15+32+45+4
@@ -26,7 +26,8 @@ pca_feature = num_feature#32
 num_class = 5
 #NORMAL_OFFSET = #int(180625*1.3)
 #app_name = {}
-app_encoder = 'app_encoder.pkl'
+app_encoder = 'app_nn_encoder.pkl'
+proto_encoder = 'proto_nn_encoder.pkl'
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
@@ -44,7 +45,7 @@ def parse_arg():
     parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
     return parser.parse_args()
 
-def genData(files, app_name, train_file=True):
+def genData(files, proto_name, app_name, train_file=True, pretrained=False):
     ##load data from csv file, and process it into numpy array
 
     #app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 32(256) and 9(app name) has 45
@@ -52,6 +53,7 @@ def genData(files, app_name, train_file=True):
     #    with open(app_encoder, 'rb') as fp:
     #        app_name = pickle.load(fp)
     app_id = 0
+    proto_id = 0
     label = {'Normal':1, 'Probing-Nmap':3, 'Probing-Port sweep':4, 'Probing-IP sweep':2, 'DDOS-smurf':0}#attr -1
     data_n = 0
     data = []
@@ -91,13 +93,16 @@ def genData(files, app_name, train_file=True):
                 #time_mark.append(row[0])
                 #src_ip_mark.append(row[1])
                 #dst_ip_mark.append(row[2])
-                if train_file:
+                if pretrained==False:
+                    if not row[8] in proto_name:
+                        proto_name[row[8]] = proto_id
+                        proto_id += 1
                     if not row[9] in app_name:
                         app_name[row[9]] = app_id
                         app_id += 1
-                else:
-                    if not row[9] in app_name:
-                        app_name[row[9]] = app_name['others']
+                #else:
+                #    if not row[9] in app_name:
+                #        app_name[row[9]] = app_name['others']
                 data_n+=1
                 
                     
@@ -121,7 +126,7 @@ def genData(files, app_name, train_file=True):
                 X[datum_i, x_i] = int(data[datum_i][attr])
                 x_i += 1
         #one hot encoding of attr 8
-        X[datum_i, x_i+int(data[datum_i][8])] = 1
+        X[datum_i, x_i+int(proto_name[data[datum_i][8]])] = 1
         x_i += 32
         #one hot encoding of attr 9
         X[datum_i, x_i+int(app_name[data[datum_i][9]])] = 1
@@ -450,6 +455,7 @@ if __name__ == '__main__':
     split = 0.8
     norm_std = np.zeros(15)
     app_name={}
+    proto_name = {}
     ## load data (training, validation and testing)
     if not pretrained:
 
@@ -458,11 +464,14 @@ if __name__ == '__main__':
             y = np.load(processed_trn_label)
             #time_mark = np.load(time_trn)
         else:
-            X, y = genData(args.trn, app_name)
+            X, y = genData(args.trn, proto_name, app_name)
             np.save(processed_trn_data, X)
             np.save(processed_trn_label, y)
             with open(app_encoder, 'wb') as fp:
                 pickle.dump(app_name, fp)    
+            with open(proto_encoder, 'wb') as fp:
+                pickle.dump(proto_name, fp)    
+            #print(app_name)
             #np.save(time_trn, time_mark)
     
         if os.path.isfile(processed_tst_data):
@@ -472,16 +481,20 @@ if __name__ == '__main__':
             #time_mark_tst = np.load(time_tst)
         else:
             if validation_check:
-                X_tst, y_tst = genData(args.tst, app_name)
+                X_tst, y_tst = genData(args.tst, proto_name, app_name)
                 np.save(processed_tst_data, X_tst)
                 np.save(processed_tst_label, y_tst)
                 with open(app_encoder, 'wb') as fp:
                     pickle.dump(app_name, fp)    
+                with open(proto_encoder, 'wb') as fp:
+                    pickle.dump(proto_name, fp)    
             else:
-                X_tst, _ = genData(args.tst, app_name, False)
+                X_tst, _ = genData(args.tst, proto_name, app_name, False)
                 np.save(processed_tst_data, X_tst)
             #np.save(time_tst, time_mark_tst)
-    
+            print(app_name)
+        print(len(app_name))
+        print(len(proto_name))
         num_trn = len(X)
         num_tst = len(X_tst)
         print('num training data: ' + str(num_trn)) 
@@ -539,10 +552,12 @@ if __name__ == '__main__':
     ## load model 
     if pretrained:
         print('load model')
-        model.loadModel('nn.h5')
+        model.loadModel('nn_dropout.h5')
         norm_std = np.load('norm_std.npy')
         with open(app_encoder, 'rb') as fp:
             app_name = pickle.load(fp)
+        with open(proto_encoder, 'rb') as fp:
+            proto_name = pickle.load(fp)
     
     ## training (adust hyper parameters)
     epochs = 35
@@ -554,7 +569,7 @@ if __name__ == '__main__':
             data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
             #with open(app_encoder, 'rb') as fp:
             #    app_name = pickle.load(fp)
-            X, _ = genData([tst_file], app_name, False)
+            X, _ = genData([tst_file], proto_name, app_name, False, pretrained)
             for x_i in range(15):
                 X[:, x_i] = (X[:, x_i])/norm_std[x_i]
 
@@ -584,8 +599,8 @@ if __name__ == '__main__':
             test['label'] = test['label'].apply(lambda x: label_map[x])
             #if str(args.eval)=='True':
             # Evaluation
-            #dat_tst = data_tst.copy()
-            #main_.evaluation(dat_tst, y_pred)
+            dat_tst = data_tst.copy()
+            main_.evaluation(dat_tst, y_pred)
             test.to_csv(tst_file[:-4]+'_nn.csv', index=False)
     else:
         print('training')
@@ -615,7 +630,7 @@ if __name__ == '__main__':
     ## save model
     if not pretrained:
         print('save model')
-        model.saveModel('nn.h5')
+        model.saveModel('nn_dropout.h5')
         np.save('norm_std.npy', norm_std)        
         #with open(app_encoder, 'wb') as fp:
         #    pickle.dump(app_name, fp)    
