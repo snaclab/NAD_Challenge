@@ -10,6 +10,7 @@ import argparse
 import sys
 import pickle
 import multiprocessing
+import math
 
 class Preprocessor:
     def __init__(self):
@@ -75,9 +76,14 @@ def add_features(df):
     inner_ip_list.extend(['192.168', '10.'])
     df['inner_src'] = df['src'].apply(lambda x: int(x.startswith(tuple(inner_ip_list))))
     df['inner_dst'] = df['dst'].apply(lambda x: int(x.startswith(tuple(inner_ip_list))))
-    df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
+    #df['is_sweep'] = df.apply(lambda row: int((row['inner_dst']==0)&(row['is_sweep']==1)), axis=1)
+    #df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
+    df['spt'] = df['spt'].astype(int)
+    df['dpt'] = df['dpt'].astype(int)
+    df['spt_zero'] = df['spt'].apply(lambda x: int(x==0))
+    df['dpt_zero'] = df['dpt'].apply(lambda x: int(x==0))
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
-    df['flow_diff'] = df['flow_diff'].apply(lambda x: 0 if x==0 else (1 if x>0 else -1))
+    df['flow_diff'] = df['flow_diff'].apply(lambda x: int(math.log(abs(x)+0.0000001)*(x/(abs(x)+0.0000001))))
     #df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
 
     return df
@@ -147,11 +153,26 @@ def preprocess_ip_binarize(df, column):
 def preprocess_ip_split(df):
     df_src = df['src'].str.split('.', expand=True)
     df_dst = df['dst'].str.split('.', expand=True)
-
+    df_spt = df[['spt']].copy()
+    df_dpt = df[['dpt']].copy()
     df_src = df_src.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(df_src.columns)})
     df_dst = df_dst.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(df_dst.columns)})
-
-    data = pd.concat([df.reset_index(drop=True), df_src.reset_index(drop=True), df_dst.reset_index(drop=True)], axis=1)
+    df_spt = df_spt.rename(columns={'spt': 'spt_diff'})
+    df_dpt = df_dpt.rename(columns={'dpt': 'dpt_diff'})
+    for i in range(4):
+        df_src['src_'+str(i)] = df_src['src_'+str(i)].astype(int)
+        df_dst['dst_'+str(i)] = df_dst['dst_'+str(i)].astype(int)
+    df_spt['spt_diff'] = df_spt['spt_diff'].astype(int)
+    df_dpt['dpt_diff'] = df_dpt['dpt_diff'].astype(int)
+    sd = pd.concat([df_src, df_dst, df_spt, df_dpt], axis=1)
+    sd = sd.diff()
+    # for c in sd.columns:
+    sd['spt_diff'] = sd['spt_diff'].apply(lambda x: int(x!=0))
+    sd['dpt_diff'] = sd['dpt_diff'].apply(lambda x: int(x!=0))
+    sd['is_sweep'] = sd.apply(lambda row: int((row['src_0']==0)&(row['src_1']==0)&(row['src_2']==0)&(row['src_3']==0)&(row['dst_0']==0)&(row['dst_1']==0)&(row['dst_2']==0)&(row['dst_3']!=0)), axis=1)
+    sd.drop(['src_'+str(i) for i in range(4)]+['dst_'+str(i) for i in range(4)], axis=1, inplace=True)
+    
+    data = pd.concat([df.reset_index(drop=True), sd.reset_index(drop=True)], axis=1)
 
     return data
 
@@ -190,11 +211,13 @@ def worker(c, return_dict, df):
     return_dict[c] = L[::-1]
 
 def algin_cnt_feature(df):
+    '''
     cn = ['cnt_dst', 'cnt_src', 'cnt_serv_src',\
     'cnt_serv_dst', 'cnt_dst_slow', 'cnt_src_slow', 'cnt_serv_src_slow',\
     'cnt_serv_dst_slow', 'cnt_dst_conn', 'cnt_src_conn',\
     'cnt_serv_src_conn', 'cnt_serv_dst_conn']
-
+    '''
+    cn = ['cnt_serv_dst_slow', 'cnt_serv_src_slow']
     jobs = []
     manager = multiprocessing.Manager()
     return_dict = manager.dict()
@@ -206,7 +229,7 @@ def algin_cnt_feature(df):
         proc.join()
     for c in cn:
         df[c+'_max'] = return_dict[c]
-    
+
     return df
 
 def parse_arg():
@@ -227,6 +250,7 @@ if __name__ == '__main__':
     
         # preprocess data
         Processor = Preprocessor()
+        df_trn = preprocess_ip_split(df_trn)
         df_trn = Processor.data_balance(df_trn)
         Processor.one_hot_fit(df_trn, 'app', 'app')
         Processor.one_hot_fit(df_trn, 'proto', 'proto')
@@ -245,6 +269,7 @@ if __name__ == '__main__':
 
     for tst_file in args.tst:
         df_tst = pd.read_csv(tst_file)
+        df_tst = preprocess_ip_split(df_tst)
         df_tst = add_features(df_tst)
         Processor = Preprocessor()
         with open("app_name.txt", "rb") as f:

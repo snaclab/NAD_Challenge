@@ -47,7 +47,6 @@ if __name__ == '__main__':
         data_trn = pd.read_csv(args.trn)
         model = learning.XGB_training(data_trn, n_class)
         learning.save_model(model, 'model.pkl')
-
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
         # predictions
@@ -77,10 +76,14 @@ if __name__ == '__main__':
 
         if str(args.eval)=='True':
             evaluation(data_tst, y_pred)
-        test.to_csv(tst_file[:-4]+'_xgb.csv', index=False)
+        test.to_csv(tst_file, index=False)
         
-        ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
-        
+        #ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
+        f_name = list(data_tst.columns)
+        f_name.remove('label')
+        model.get_booster().feature_names = f_name
+        fi = model.get_booster().get_score(importance_type="gain")
+        print({k: v for k, v in sorted(fi.items(), key=lambda item: item[1], reverse=True)})
     '''
     # plot feature importance
     model.get_booster().feature_names = list(data_trn.columns)[:-1]
