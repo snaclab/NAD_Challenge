@@ -11,6 +11,8 @@ import sys
 import pickle
 import multiprocessing
 import math
+import datetime
+import time
 
 class Preprocessor:
     def __init__(self):
@@ -76,16 +78,10 @@ def add_features(df):
     inner_ip_list.extend(['192.168', '10.'])
     df['inner_src'] = df['src'].apply(lambda x: int(x.startswith(tuple(inner_ip_list))))
     df['inner_dst'] = df['dst'].apply(lambda x: int(x.startswith(tuple(inner_ip_list))))
-    #df['is_sweep'] = df.apply(lambda row: int((row['inner_dst']==0)&(row['is_sweep']==1)), axis=1)
-    #df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
-    df['spt'] = df['spt'].astype(int)
-    df['dpt'] = df['dpt'].astype(int)
-    df['spt_zero'] = df['spt'].apply(lambda x: int(x==0))
-    df['dpt_zero'] = df['dpt'].apply(lambda x: int(x==0))
+    df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
-    df['flow_diff'] = df['flow_diff'].apply(lambda x: int(math.log(abs(x)+0.0000001)*(x/(abs(x)+0.0000001))))
+    df['flow_diff'] = df['flow_diff'].apply(lambda x: 0 if x==0 else (1 if x>0 else -1))
     #df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
-
     return df
 
 def inverse_one_hot_encoding(df, col):
@@ -166,12 +162,10 @@ def preprocess_ip_split(df):
     df_dpt['dpt_diff'] = df_dpt['dpt_diff'].astype(int)
     sd = pd.concat([df_src, df_dst, df_spt, df_dpt], axis=1)
     sd = sd.diff()
-    # for c in sd.columns:
-    sd['spt_diff'] = sd['spt_diff'].apply(lambda x: int(x!=0))
-    sd['dpt_diff'] = sd['dpt_diff'].apply(lambda x: int(x!=0))
+    for c in sd.columns:
+        sd[c] = sd[c].apply(lambda x: int(x!=0))
     sd['is_sweep'] = sd.apply(lambda row: int((row['src_0']==0)&(row['src_1']==0)&(row['src_2']==0)&(row['src_3']==0)&(row['dst_0']==0)&(row['dst_1']==0)&(row['dst_2']==0)&(row['dst_3']!=0)), axis=1)
     sd.drop(['src_'+str(i) for i in range(4)]+['dst_'+str(i) for i in range(4)], axis=1, inplace=True)
-    
     data = pd.concat([df.reset_index(drop=True), sd.reset_index(drop=True)], axis=1)
 
     return data
@@ -250,7 +244,6 @@ if __name__ == '__main__':
     
         # preprocess data
         Processor = Preprocessor()
-        df_trn = preprocess_ip_split(df_trn)
         df_trn = Processor.data_balance(df_trn)
         Processor.one_hot_fit(df_trn, 'app', 'app')
         Processor.one_hot_fit(df_trn, 'proto', 'proto')
@@ -263,19 +256,16 @@ if __name__ == '__main__':
         proto_name = inverse_one_hot_encoding(df_trn, 'proto')
         with open("proto_name.txt", "wb") as f:
             pickle.dump(proto_name, f)
-
         data_trn = data_transform(Processor, df_trn, app_name, proto_name, True)
         data_trn.to_csv(args.output_trn, index=False)
 
     for tst_file in args.tst:
         df_tst = pd.read_csv(tst_file)
-        df_tst = preprocess_ip_split(df_tst)
         df_tst = add_features(df_tst)
         Processor = Preprocessor()
         with open("app_name.txt", "rb") as f:
             app_name = pickle.load(f)
         with open("proto_name.txt", "rb") as f:
-            proto_name = pickle.load(f)
-        
+            proto_name = pickle.load(f) 
         data_tst = data_transform(Processor, df_tst, app_name, proto_name, False)
         data_tst.to_csv(tst_file[:-4]+'_processed.csv', index=False)
