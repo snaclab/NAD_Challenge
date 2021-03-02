@@ -27,7 +27,6 @@ $ sudo python3 -m pip install virtualenv
 ```
 
 **Enviroment Setup**:
-
 We use virtual environment to run this project, to setup envrionment you could use following script to setup environment.
 
 ```shell
@@ -57,7 +56,7 @@ $ python main.py --trn train.csv --tst_src /path/to/testing_data/testing_data.cs
 For prediction, please use following script. Note that you should train your model first by running script above to create pretrained model.
 
 ```shell
-$ python main.py --tst_src /path/to/testing_data/testing_data.csv --eval False --pretrained True
+$ python main.py --tst_src /path/to/testing_data/testing_data.csv --pretrained True
 ```
 
 ### run.sh

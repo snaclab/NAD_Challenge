@@ -15,7 +15,7 @@ def parse_arg():
     parser.add_argument('--pretrained', help='whether exists pretrained model', default=False)
     parser.add_argument('--tst_src', nargs='+',  help='original test dataset', required=True)
     parser.add_argument('--trn', help='input training dataset', required=False)
-    parser.add_argument('--eval', help='whether evaluate predicted result (when exists ground truth)', default=True)
+    parser.add_argument('--eval', help='whether evaluate predicted result (when exists ground truth)', default=False)
     return parser.parse_args()
 
 def evaluation(data_tst, y_pred):
