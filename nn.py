@@ -2,7 +2,7 @@
 import tensorflow as tf
 import numpy as np
 #from tensorflow import keras
-import learning
+import xgb
 import preprocess
 import argparse
 from keras.models import Sequential, load_model
@@ -645,9 +645,9 @@ if __name__ == '__main__':
         if validation_check:
             print('testing')
             val_pred, val_prob = model.testModel(X_val)
-            learning.eval(val_test, val_pred)
+            xgb.eval(val_test, val_pred)
             y_pred, y_prob = model.testModel(X_tst)
-            learning.eval(y_test, y_pred)
+            xgb.eval(y_test, y_pred)
 
     ## save model
     if not pretrained:

@@ -2,7 +2,7 @@
 import tensorflow as tf
 import numpy as np
 #from tensorflow import keras
-import learning
+import xgb
 import preprocess
 import argparse
 from keras.models import Sequential
@@ -432,7 +432,7 @@ if __name__ == '__main__':
     print('testing')
     if validation_check:
         val_pred, _ = model.testModel(X_val, num_val)
-        learning.eval(val_test, val_pred)
+        xgb.eval(val_test, val_pred)
     
     y_pred, y_value = model.testModel(X_test, num_tst)
     #print(len(y_test))
@@ -453,7 +453,7 @@ if __name__ == '__main__':
     with open('xgrnn_pred.pickle', 'wb') as fp:
         pickle.dump(xgboost_value, fp)
 
-    #learning.eval(y_test, y_pred)
+    #xgb.eval(y_test, y_pred)
 
     ## save model
     print('save model')

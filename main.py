@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import argparse
 import preprocess
-import learning
+import xgb
 from xgboost import plot_importance
 import matplotlib.pyplot as plt
 import datetime
@@ -22,7 +22,7 @@ def evaluation(data_tst, y_pred):
     label_map = {'DDOS-smurf':0, 'Normal':1, 'Probing-IP sweep':2, 'Probing-Nmap':3, 'Probing-Port sweep':4}
     data_tst['label'] = data_tst['label'].apply(lambda x: label_map[x])
     Y_test = data_tst[['label']].copy().values.reshape(1, -1)[0]
-    learning.eval(Y_test, y_pred)
+    xgb.eval(Y_test, y_pred)
     macro_fbeta_score = fbeta_score(Y_test, y_pred, average='macro', beta=2)
     print('macro F beta score: ', macro_fbeta_score)
     cost_matrix = np.array([[0,2,1,1,1],[2,0,1,1,1],[2,1,0,1,1],[2,1,1,0,1],[2,1,1,1,0]])
@@ -37,15 +37,15 @@ if __name__ == '__main__':
 
     # training process
     if str(args.pretrained)=='True':
-        model = learning.load_model('pretrained/model.pkl')
+        model = xgb.load_model('pretrained/model.pkl')
     else:
         data_trn = pd.read_csv(args.trn)
-        model = learning.XGB_training(data_trn, n_class)
-        learning.save_model(model, 'pretrained/model.pkl')
+        model = xgb.XGB_training(data_trn, n_class)
+        xgb.save_model(model, 'pretrained/model.pkl')
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
         # predictions
-        y_pred = learning.XGB_prediction(data_tst, model)
+        y_pred = xgb.XGB_prediction(data_tst, model)
         df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         for time_setting in ['minute', 'hour']:
             # postprocess
