@@ -37,11 +37,11 @@ if __name__ == '__main__':
 
     # training process
     if str(args.pretrained)=='True':
-        model = learning.load_model('model.pkl')
+        model = learning.load_model('pretrained/model.pkl')
     else:
         data_trn = pd.read_csv(args.trn)
         model = learning.XGB_training(data_trn, n_class)
-        learning.save_model(model, 'model.pkl')
+        learning.save_model(model, 'pretrained/model.pkl')
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
         # predictions
