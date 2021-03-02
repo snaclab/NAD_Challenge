@@ -2,5 +2,4 @@ __pycache__/
 *.csv
 *.model
 *.npy
-*.pkl
 .vscode/
