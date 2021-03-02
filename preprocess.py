@@ -10,6 +10,9 @@ import argparse
 import sys
 import pickle
 import multiprocessing
+import math
+import datetime
+import time
 
 class Preprocessor:
     def __init__(self):
@@ -26,12 +29,12 @@ class Preprocessor:
     def one_hot_fit(self, df, enc_name, column_name):
         self.one_hot_enc_dict[enc_name] = OneHotEncoder(handle_unknown='ignore')
         self.one_hot_enc_dict[enc_name].fit(np.array(df[column_name].unique().tolist()).reshape(-1, 1))
-        pickle.dump(self.one_hot_enc_dict[enc_name], open(enc_name+'_enc.pkl', 'wb'))
+        pickle.dump(self.one_hot_enc_dict[enc_name], open('pretrained/'+enc_name+'_enc.pkl', 'wb'))
 
     def label_fit(self, df, enc_name, column_name):
         self.label_enc_dict[enc_name] = preprocessing.LabelEncoder()
         self.label_enc_dict[enc_name].fit(df[column_name].unique())
-        pickle.dump(self.label_enc_dict[enc_name], open(enc_name+'_enc.pkl', 'wb'))
+        pickle.dump(self.label_enc_dict[enc_name], open('pretrained/'+enc_name+'_enc.pkl', 'wb'))
 
     def hashing_fit(self, n_components, df, enc_name, column_name):
         self.hash_enc_dict[enc_name] = HashingEncoder(n_components=n_components)
@@ -41,14 +44,14 @@ class Preprocessor:
         if is_train:
             return self.one_hot_enc_dict[enc_name].transform(np.array(df[column_name]).reshape(-1,1)).toarray()            
         else:
-            enc = pickle.load(open(enc_name+'_enc.pkl', 'rb'))
+            enc = pickle.load(open('pretrained/'+enc_name+'_enc.pkl', 'rb'))
             return enc.transform(np.array(df[column_name]).reshape(-1,1)).toarray()
 
     def label_transform(self, df, enc_name, column_name, is_train):
         if is_train:
             return self.label_enc_dict[enc_name].transform(df[column_name].values)
         else:
-            enc = pickle.load(open(enc_name+'_enc.pkl', 'rb'))
+            enc = pickle.load(open('pretrained/'+enc_name+'_enc.pkl', 'rb'))
             return enc.transform(df[column_name].values)
 
     def hashing_transform(self, df, enc_name, column_name):
@@ -79,7 +82,6 @@ def add_features(df):
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
     df['flow_diff'] = df['flow_diff'].apply(lambda x: 0 if x==0 else (1 if x>0 else -1))
     #df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
-
     return df
 
 def inverse_one_hot_encoding(df, col):
@@ -147,11 +149,24 @@ def preprocess_ip_binarize(df, column):
 def preprocess_ip_split(df):
     df_src = df['src'].str.split('.', expand=True)
     df_dst = df['dst'].str.split('.', expand=True)
-
+    df_spt = df[['spt']].copy()
+    df_dpt = df[['dpt']].copy()
     df_src = df_src.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(df_src.columns)})
     df_dst = df_dst.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(df_dst.columns)})
-
-    data = pd.concat([df.reset_index(drop=True), df_src.reset_index(drop=True), df_dst.reset_index(drop=True)], axis=1)
+    df_spt = df_spt.rename(columns={'spt': 'spt_diff'})
+    df_dpt = df_dpt.rename(columns={'dpt': 'dpt_diff'})
+    for i in range(4):
+        df_src['src_'+str(i)] = df_src['src_'+str(i)].astype(int)
+        df_dst['dst_'+str(i)] = df_dst['dst_'+str(i)].astype(int)
+    df_spt['spt_diff'] = df_spt['spt_diff'].astype(int)
+    df_dpt['dpt_diff'] = df_dpt['dpt_diff'].astype(int)
+    sd = pd.concat([df_src, df_dst, df_spt, df_dpt], axis=1)
+    sd = sd.diff()
+    for c in sd.columns:
+        sd[c] = sd[c].apply(lambda x: int(x!=0))
+    sd['is_sweep'] = sd.apply(lambda row: int((row['src_0']==0)&(row['src_1']==0)&(row['src_2']==0)&(row['src_3']==0)&(row['dst_0']==0)&(row['dst_1']==0)&(row['dst_2']==0)&(row['dst_3']!=0)), axis=1)
+    sd.drop(['src_'+str(i) for i in range(4)]+['dst_'+str(i) for i in range(4)], axis=1, inplace=True)
+    data = pd.concat([df.reset_index(drop=True), sd.reset_index(drop=True)], axis=1)
 
     return data
 
@@ -190,11 +205,13 @@ def worker(c, return_dict, df):
     return_dict[c] = L[::-1]
 
 def algin_cnt_feature(df):
+    '''
     cn = ['cnt_dst', 'cnt_src', 'cnt_serv_src',\
     'cnt_serv_dst', 'cnt_dst_slow', 'cnt_src_slow', 'cnt_serv_src_slow',\
     'cnt_serv_dst_slow', 'cnt_dst_conn', 'cnt_src_conn',\
     'cnt_serv_src_conn', 'cnt_serv_dst_conn']
-
+    '''
+    cn = ['cnt_serv_dst_slow', 'cnt_serv_src_slow']
     jobs = []
     manager = multiprocessing.Manager()
     return_dict = manager.dict()
@@ -206,7 +223,7 @@ def algin_cnt_feature(df):
         proc.join()
     for c in cn:
         df[c+'_max'] = return_dict[c]
-    
+
     return df
 
 def parse_arg():
@@ -234,12 +251,11 @@ if __name__ == '__main__':
         print_class_name(Processor, n_class)
         df_trn = add_features(df_trn)
         app_name = inverse_one_hot_encoding(df_trn, 'app')
-        with open("app_name.txt", "wb") as f:
+        with open("pretrained/app_name.txt", "wb") as f:
             pickle.dump(app_name, f)
         proto_name = inverse_one_hot_encoding(df_trn, 'proto')
-        with open("proto_name.txt", "wb") as f:
+        with open("pretrained/proto_name.txt", "wb") as f:
             pickle.dump(proto_name, f)
-
         data_trn = data_transform(Processor, df_trn, app_name, proto_name, True)
         data_trn.to_csv(args.output_trn, index=False)
 
@@ -247,10 +263,9 @@ if __name__ == '__main__':
         df_tst = pd.read_csv(tst_file)
         df_tst = add_features(df_tst)
         Processor = Preprocessor()
-        with open("app_name.txt", "rb") as f:
+        with open("pretrained/app_name.txt", "rb") as f:
             app_name = pickle.load(f)
-        with open("proto_name.txt", "rb") as f:
-            proto_name = pickle.load(f)
-        
+        with open("pretrained/proto_name.txt", "rb") as f:
+            proto_name = pickle.load(f) 
         data_tst = data_transform(Processor, df_tst, app_name, proto_name, False)
         data_tst.to_csv(tst_file[:-4]+'_processed.csv', index=False)

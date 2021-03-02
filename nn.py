@@ -26,8 +26,7 @@ pca_feature = num_feature#32
 num_class = 5
 #NORMAL_OFFSET = #int(180625*1.3)
 #app_name = {}
-app_encoder = 'app_nn_encoder.pkl'
-proto_encoder = 'proto_nn_encoder.pkl'
+app_encoder = 'pretrained/'+'app_encoder.pkl'
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
@@ -574,8 +573,8 @@ if __name__ == '__main__':
     ## load model 
     if pretrained:
         print('load model')
-        model.loadModel('nn.h5')
-        norm_std = np.load('norm_std.npy')
+        model.loadModel('pretrained/'+'nn.h5')
+        norm_std = np.load('pretrained/'+'norm_std.npy')
         with open(app_encoder, 'rb') as fp:
             app_name = pickle.load(fp)
         with open(proto_encoder, 'rb') as fp:
@@ -653,9 +652,8 @@ if __name__ == '__main__':
     ## save model
     if not pretrained:
         print('save model')
-        model.saveModel('nn.h5')
-        #model_all.saveModel('nn_all.h5')
-        np.save('norm_std.npy', norm_std)        
+        model.saveModel('pretrained/'+'nn.h5')
+        np.save('pretrained/'+'norm_std.npy', norm_std)        
         #with open(app_encoder, 'wb') as fp:
         #    pickle.dump(app_name, fp)    
 
