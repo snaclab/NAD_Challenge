@@ -6,7 +6,7 @@ import learning
 import preprocess
 import argparse
 from keras.models import Sequential, load_model
-from keras.layers import Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten, Masking
+from keras.layers import Dropout, Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten, Masking
 import csv
 import os
 import random
@@ -16,17 +16,18 @@ import datetime
 
 ##remove these
 #import main_
-#os.environ["CUDA_VISIBLE_DEVICES"]="0"
+#os.environ["CUDA_VISIBLE_DEVICES"]="1"
 validation_check = False
 
 seq_step = 0
-main_feature = 15+32+45+4
+main_feature = 15+4+45+4
 num_feature = (main_feature)*(1+seq_step*2)#+64#+32#+64+32
 pca_feature = num_feature#32
 num_class = 5
 #NORMAL_OFFSET = #int(180625*1.3)
 #app_name = {}
-app_encoder = 'app_encoder.pkl'
+app_encoder = 'app_nn_encoder.pkl'
+proto_encoder = 'proto_nn_encoder.pkl'
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
@@ -44,7 +45,7 @@ def parse_arg():
     parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
     return parser.parse_args()
 
-def genData(files, app_name, train_file=True):
+def genData(files, app_name, proto_name, train_file=True):
     ##load data from csv file, and process it into numpy array
 
     #app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 32(256) and 9(app name) has 45
@@ -52,6 +53,7 @@ def genData(files, app_name, train_file=True):
     #    with open(app_encoder, 'rb') as fp:
     #        app_name = pickle.load(fp)
     app_id = 0
+    proto_id = 0
     label = {'Normal':1, 'Probing-Nmap':3, 'Probing-Port sweep':4, 'Probing-IP sweep':2, 'DDOS-smurf':0}#attr -1
     data_n = 0
     data = []
@@ -92,12 +94,15 @@ def genData(files, app_name, train_file=True):
                 #src_ip_mark.append(row[1])
                 #dst_ip_mark.append(row[2])
                 if train_file:
+                    if not row[8] in proto_name:
+                        proto_name[row[8]] = proto_id
+                        proto_id += 1
                     if not row[9] in app_name:
                         app_name[row[9]] = app_id
                         app_id += 1
-                else:
-                    if not row[9] in app_name:
-                        app_name[row[9]] = app_name['others']
+                #else:
+                #    if not row[9] in app_name:
+                #        app_name[row[9]] = app_name['others']
                 data_n+=1
                 
                     
@@ -121,8 +126,9 @@ def genData(files, app_name, train_file=True):
                 X[datum_i, x_i] = int(data[datum_i][attr])
                 x_i += 1
         #one hot encoding of attr 8
-        X[datum_i, x_i+int(data[datum_i][8])] = 1
-        x_i += 32
+        #X[datum_i, x_i+int(data[datum_i][8])] = 1
+        X[datum_i, x_i+int(proto_name[data[datum_i][8]])] = 1
+        x_i += 4
         #one hot encoding of attr 9
         X[datum_i, x_i+int(app_name[data[datum_i][9]])] = 1
         x_i += 45
@@ -151,6 +157,24 @@ def genData(files, app_name, train_file=True):
             X[datum_i, x_i] = 1
         x_i+=1
         '''
+        #is sweep
+        if datum_i == 0:
+            X[datum_i, x_i] = 0
+        else:
+            src_prev_ip = data[datum_i-1][1].split('.')
+            dst_prev_ip = data[datum_i-1][2].split('.')
+            src_ip = data[datum_i][1].split('.')
+            dst_ip = data[datum_i][2].split('.')
+            src_prev_val = int(src_prev_ip[0])*(256**3)+int(src_prev_ip[1])*(256**2)+int(src_prev_ip[2])*(256)+int(src_prev_ip[3])
+            dst_prev_val = int(dst_prev_ip[0])*(256**3)+int(dst_prev_ip[1])*(256**2)+int(dst_prev_ip[2])*(256)+int(dst_prev_ip[3])
+            src_val = int(src_ip[0])*(256**3)+int(src_ip[1])*(256**2)+int(src_ip[2])*(256)+int(src_ip[3])
+            dst_val = int(dst_ip[0])*(256**3)+int(dst_ip[1])*(256**2)+int(dst_ip[2])*(256)+int(dst_ip[3])
+            if src_prev_val==src_val and abs(dst_prev_val-dst_val)==1:
+                X[datum_i, x_i] = 1
+            else:
+                X[datum_i, x_i] = 0
+        x_i += 1
+        
         #dst IP end with 255:
         if int(ip[-1]) == 255:
             X[datum_i, x_i] = 1
@@ -197,7 +221,10 @@ def genData(files, app_name, train_file=True):
         if train_file:
             y[datum_i, label[data[datum_i][22]]] = 1
         else:
-            y[datum_i, 0] = 1
+            if validation_check:
+                y[datum_i, label[data[datum_i][22]]] = 1
+            else:
+                y[datum_i, 0] = 1
         #dat_i += 1
         
         ##time_all = data[datum_i][0].split()
@@ -397,7 +424,11 @@ class nnModel():
 
         self.model = Sequential()
         self.model.add(Dense(32, activation='relu', input_shape=(num_feature,)))
+        self.model.add(Dropout(0.2))
         self.model.add(Dense(32, activation='relu'))
+        self.model.add(Dropout(0.2))
+        #self.model.add(Dense(32, activation='relu'))
+        #self.model.add(Dropout(0.2))
         #self.model.add(Dense(32, activation='relu'))
         self.model.add(Dense(num_class, activation='softmax'))
         #self.model.add(Masking(mask_value=0.0, input_shape=(time_step, pca_feature)))
@@ -450,6 +481,7 @@ if __name__ == '__main__':
     split = 0.8
     norm_std = np.zeros(15)
     app_name={}
+    proto_name={}
     ## load data (training, validation and testing)
     if not pretrained:
 
@@ -458,11 +490,13 @@ if __name__ == '__main__':
             y = np.load(processed_trn_label)
             #time_mark = np.load(time_trn)
         else:
-            X, y = genData(args.trn, app_name)
+            X, y = genData(args.trn, app_name, proto_name)
             np.save(processed_trn_data, X)
             np.save(processed_trn_label, y)
             with open(app_encoder, 'wb') as fp:
                 pickle.dump(app_name, fp)    
+            with open(proto_encoder, 'wb') as fp:
+                pickle.dump(proto_name, fp)    
             #np.save(time_trn, time_mark)
     
         if os.path.isfile(processed_tst_data):
@@ -472,13 +506,13 @@ if __name__ == '__main__':
             #time_mark_tst = np.load(time_tst)
         else:
             if validation_check:
-                X_tst, y_tst = genData(args.tst, app_name)
+                X_tst, y_tst = genData(args.tst, app_name, proto_name, False)
                 np.save(processed_tst_data, X_tst)
                 np.save(processed_tst_label, y_tst)
-                with open(app_encoder, 'wb') as fp:
-                    pickle.dump(app_name, fp)    
+                #with open(app_encoder, 'wb') as fp:
+                #    pickle.dump(app_name, fp)    
             else:
-                X_tst, _ = genData(args.tst, app_name, False)
+                X_tst, _ = genData(args.tst, app_name, proto_name, False)
                 np.save(processed_tst_data, X_tst)
             #np.save(time_tst, time_mark_tst)
     
@@ -516,7 +550,7 @@ if __name__ == '__main__':
             #    count[lab]+=1
             #print(count)
         else:
-            X_train, y_train = X, y
+            X_train, y_train = X[:], y[:]
     
     #else:
     #    X_train, y_train = genSeqData(X[:], y[:], True, max_len=seq_step)
@@ -536,6 +570,7 @@ if __name__ == '__main__':
     ## build model 
     print('build model')
     model = nnModel()
+    #model_all = nnModel()
     ## load model 
     if pretrained:
         print('load model')
@@ -543,6 +578,8 @@ if __name__ == '__main__':
         norm_std = np.load('norm_std.npy')
         with open(app_encoder, 'rb') as fp:
             app_name = pickle.load(fp)
+        with open(proto_encoder, 'rb') as fp:
+            proto_name = pickle.load(fp)
     
     ## training (adust hyper parameters)
     epochs = 35
@@ -554,7 +591,7 @@ if __name__ == '__main__':
             #data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
             #with open(app_encoder, 'rb') as fp:
             #    app_name = pickle.load(fp)
-            X, _ = genData([tst_file], app_name, False)
+            X, _ = genData([tst_file], app_name, proto_name, False)
             for x_i in range(15):
                 X[:, x_i] = (X[:, x_i])/norm_std[x_i]
 
@@ -595,6 +632,7 @@ if __name__ == '__main__':
             #    print('Progress: ' + str(i) + '/' + str(len(X_train)))
             #model.trainModel(X_train[i:i+batch_size], y_train[i:i+batch_size])
             model.trainModel(X_train, y_train, batch_size)
+            #model_all.trainModel(X, y, batch_size)
         
             #trn_acc = model.validationModel(X_train, y_train)
             if validation_check:
@@ -616,6 +654,7 @@ if __name__ == '__main__':
     if not pretrained:
         print('save model')
         model.saveModel('nn.h5')
+        #model_all.saveModel('nn_all.h5')
         np.save('norm_std.npy', norm_std)        
         #with open(app_encoder, 'wb') as fp:
         #    pickle.dump(app_name, fp)    
