@@ -35,6 +35,14 @@ $ . venv/bin/activate
 $ python -m pip install -r requirements.txt
 ```
 
+### run.sh
+
+You could simpliy modify the paths of training and testing sets in ``run.sh``. Then, run ``run.sh`` directly to run this project. Note that you could also change `--pretrained` arguments to decide whether to use the pretrained models we provided.
+
+```shell
+$ sh run.sh
+```
+
 ### Preprocessing
 
 For data preprocessing, please use following script.
@@ -57,13 +65,5 @@ For prediction, please use following script. Note that you should train your mod
 
 ```shell
 $ python main.py --tst_src /path/to/testing_data/testing_data.csv --pretrained True
-```
-
-### run.sh
-
-Alternatively, you could modify the paths of training and testing sets in ``run.sh``. Then, run ``run.sh`` to run this project.
-
-```shell
-$ sh run.sh
 ```
 
