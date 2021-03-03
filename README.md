@@ -61,7 +61,7 @@ $ python main.py --tst_src /path/to/testing_data/testing_data.csv --pretrained T
 
 ### run.sh
 
-Alternatively, you could run ``run.sh`` directly to run this project.
+Alternatively, you could modify the paths of training and testing sets in ``run.sh``. Then, run ``run.sh`` to run this project.
 
 ```shell
 $ sh run.sh
