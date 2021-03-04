@@ -16,7 +16,7 @@ import datetime
 
 ##remove these
 #import main_
-#os.environ["CUDA_VISIBLE_DEVICES"]=""
+#os.environ["CUDA_VISIBLE_DEVICES"]="9"
 validation_check = True
 
 num_feature = 15+4+45+5
@@ -360,7 +360,7 @@ if __name__ == '__main__':
     if pretrained:
         print('testing')
         for tst_file in args.tst:
-            data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
+            #data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
             X, _ = genData([tst_file], app_name, proto_name, False)
             for x_i in range(15):
                 X[:, x_i] = (X[:, x_i])/norm_std[x_i]
@@ -396,8 +396,8 @@ if __name__ == '__main__':
                 label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
                 test['label'] = ans['pred']
                 test['label'] = test['label'].apply(lambda x: label_map[x])
-                dat_tst = data_tst.copy()
-                main_.evaluation(dat_tst, y_pred)
+                #dat_tst = data_tst.copy()
+                #main_.evaluation(dat_tst, y_pred)
                 if time_setting == 'minute':
                     test.to_csv(tst_file[:-4]+'_'+time_setting+'_nn_predicted.csv', index=False)
                 elif time_setting == 'hour':
