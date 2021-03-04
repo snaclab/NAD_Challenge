@@ -9,6 +9,7 @@ import datetime
 from sklearn.metrics import fbeta_score
 import math
 from sklearn.metrics import confusion_matrix
+from ensembling import ensemble
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process dataset name')
@@ -32,7 +33,7 @@ def evaluation(data_tst, y_pred):
 
 if __name__ == '__main__':
     args = parse_arg()
-    
+    run_ensemble = True
     n_class = 5
 
     # training process
@@ -79,11 +80,16 @@ if __name__ == '__main__':
             if time_setting == 'minute':
                 test.to_csv(tst_file[:-4]+'_'+time_setting+'_predicted.csv', index=False)
             elif time_setting == 'hour':
-                if str(args.eval)=='True':
-                    test.to_csv(tst_file[:-4]+'_predicted.csv', index=False)
+                if run_ensemble:
+                    test.to_csv(tst_file[:-4]+'_xgb.csv', index=False)
                 else:
-                    test.to_csv(tst_file, index=False)
+                    if str(args.eval)=='True':
+                        test.to_csv(tst_file[:-4]+'_predicted.csv', index=False)
+                    else:
+                        test.to_csv(tst_file, index=False)
 
-            if str(args.eval)=='True':
-                # Evaluation
-                evaluation(data_tst.copy(), y_pred)
+                    if str(args.eval)=='True':
+                        # Evaluation
+                        evaluation(data_tst.copy(), y_pred)
+        if run_ensemble:
+            ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
