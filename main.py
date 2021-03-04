@@ -76,11 +76,14 @@ if __name__ == '__main__':
             label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
             test['label'] = ans['pred']
             test['label'] = test['label'].apply(lambda x: label_map[x])
+            if time_setting == 'minute':
+                test.to_csv(tst_file[:-4]+'_'+time_setting+'_predicted.csv', index=False)
+            elif time_setting == 'hour':
+                if str(args.eval)=='True':
+                    test.to_csv(tst_file[:-4]+'_predicted.csv', index=False)
+                else:
+                    test.to_csv(tst_file, index=False)
+
             if str(args.eval)=='True':
                 # Evaluation
                 evaluation(data_tst.copy(), y_pred)
-            else:
-                if time_setting == 'minute':
-                    test.to_csv(tst_file[:-4]+'_'+time_setting+'_predicted.csv', index=False)
-                elif time_setting == 'hour':
-                    test.to_csv(tst_file, index=False)
