@@ -16,14 +16,19 @@ import datetime
 
 ##remove these
 #import main_
-#os.environ["CUDA_VISIBLE_DEVICES"]="8"
-validation_check = False
+#os.environ["CUDA_VISIBLE_DEVICES"]=""
+validation_check = True
 
-num_feature = 15+4+45+4
+num_feature = 15+4+45+5
 num_class = 5
 #NORMAL_OFFSET = #int(180625*1.3)
+##All models' paths are here:
 proto_encoder = 'pretrained/'+'proto_encoder.pkl'
 app_encoder = 'pretrained/'+'app_encoder.pkl'
+nn_model = 'pretrained/'+'nn.h5'
+norm = 'pretrained/'+'norm_std.npy'
+
+
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
@@ -35,6 +40,7 @@ def parse_arg():
     parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
     parser.add_argument('--tst', nargs='+', help='input testing dataset', required=False)
     parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
+    #parser.add_argument('--id', help='experiment_id', default=False)
     return parser.parse_args()
 
 def genData(files, app_name, proto_name, train_file=True):
@@ -126,11 +132,12 @@ def genData(files, app_name, proto_name, train_file=True):
             else:
                 X[datum_i, x_i] = 0
         x_i += 1
+        '''
         #dst IP end with 255:
         if int(ip[-1]) == 255:
             X[datum_i, x_i] = 1
         x_i+=1
-        '''
+        
         #flow diff
         if int(data[datum_i][6])-int(data[datum_i][7]) > 0:
             X[datum_i, x_i] = 1
@@ -265,6 +272,7 @@ if __name__ == '__main__':
     
     args = parse_arg()
     pretrained = False
+    #exp_id = args.id
     if args.pretrained == "True":
         pretrained = True
     ## data preprocessing
@@ -279,6 +287,10 @@ if __name__ == '__main__':
         if os.path.isfile(processed_trn_data) and os.path.isfile(processed_trn_label):
             X = np.load(processed_trn_data)
             y = np.load(processed_trn_label)
+            with open(app_encoder, 'rb') as fp:
+                app_name = pickle.load(fp)
+            with open(proto_encoder, 'rb') as fp:
+                proto_name = pickle.load(fp)
         else:
             X, y = genData(args.trn, app_name, proto_name)
             np.save(processed_trn_data, X)
@@ -290,6 +302,8 @@ if __name__ == '__main__':
     
         if os.path.isfile(processed_tst_data):
             X_tst = np.load(processed_tst_data)
+            if validation_check:
+                y_tst = np.load(processed_tst_label)
         else:
             if validation_check:
                 X_tst, y_tst = genData(args.tst, app_name, proto_name, False)
@@ -332,8 +346,8 @@ if __name__ == '__main__':
     ## load model 
     if pretrained:
         print('load model')
-        model.loadModel('pretrained/'+'nn.h5')
-        norm_std = np.load('pretrained/'+'norm_std.npy')
+        model.loadModel(nn_model)
+        norm_std = np.load(norm)
         with open(app_encoder, 'rb') as fp:
             app_name = pickle.load(fp)
         with open(proto_encoder, 'rb') as fp:
@@ -346,7 +360,7 @@ if __name__ == '__main__':
     if pretrained:
         print('testing')
         for tst_file in args.tst:
-            #data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
+            data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
             X, _ = genData([tst_file], app_name, proto_name, False)
             for x_i in range(15):
                 X[:, x_i] = (X[:, x_i])/norm_std[x_i]
@@ -382,8 +396,8 @@ if __name__ == '__main__':
                 label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
                 test['label'] = ans['pred']
                 test['label'] = test['label'].apply(lambda x: label_map[x])
-                #dat_tst = data_tst.copy()
-                #main_.evaluation(dat_tst, y_pred)
+                dat_tst = data_tst.copy()
+                main_.evaluation(dat_tst, y_pred)
                 if time_setting == 'minute':
                     test.to_csv(tst_file[:-4]+'_'+time_setting+'_nn_predicted.csv', index=False)
                 elif time_setting == 'hour':
@@ -398,7 +412,8 @@ if __name__ == '__main__':
             if validation_check:
                 val_acc = model.validationModel(X_val, y_val)
                 print('val acc: ' + str(val_acc))
-    
+
+
     ## testing
     if not pretrained:
         if validation_check:
@@ -411,6 +426,6 @@ if __name__ == '__main__':
     ## save model
     if not pretrained:
         print('save model')
-        model.saveModel('pretrained/'+'nn.h5')
-        np.save('pretrained/'+'norm_std.npy', norm_std)        
+        model.saveModel(nn_model)
+        np.save(norm, norm_std)        
 
