@@ -40,7 +40,7 @@ def transform_label(ans_df):
     return ans['label']
 
 # postprocess
-def post_processing(tst_file, df_pred, run_ensemble, _eval):
+def post_processing(tst_file, df_pred, model_name):
     for time_setting in ['minute', 'hour']:
         test = pd.read_csv(tst_file)
         ans = voting(test, df_pred, time_setting)
@@ -58,13 +58,7 @@ def post_processing(tst_file, df_pred, run_ensemble, _eval):
             continue
         
         # only for "hour"
-        if run_ensemble:
-            test.to_csv(tst_file[:-4]+'_xgb.csv', index=False)
-        else:
-            if str(_eval)=='True':
-                test.to_csv(tst_file[:-4]+'_predicted.csv', index=False)
-            else:
-                test.to_csv(tst_file, index=False)
+        test.to_csv(tst_file[:-4]+'_{}.csv'.format(model_name), index=False)
 
         y_pred = ans['pred'].values
 
