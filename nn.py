@@ -3,10 +3,12 @@ import tensorflow as tf
 import numpy as np
 #from tensorflow import keras
 import xgb
+import main
 import preprocess
 import argparse
 from keras.models import Sequential, load_model
 from keras.layers import Dropout, Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten, Masking
+from keras import optimizers
 import csv
 import os
 import random
@@ -14,26 +16,26 @@ import pickle
 import pandas as pd
 import datetime
 
-##remove these
-#import main_
-#os.environ["CUDA_VISIBLE_DEVICES"]="9"
-validation_check = True
+##do not use CUDA in full test (assume the server does not have GPU)
+os.environ["CUDA_VISIBLE_DEVICES"]="9"
+#if do full test, set to false
+validation_check = False
 
 num_feature = 15+4+45+5
 num_class = 5
+early_stop_patience = 10
 #NORMAL_OFFSET = #int(180625*1.3)
-##All models' paths are here:
-proto_encoder = 'pretrained/'+'proto_encoder.pkl'
-app_encoder = 'pretrained/'+'app_encoder.pkl'
-nn_model = 'pretrained/'+'nn.h5'
-norm = 'pretrained/'+'norm_std.npy'
 
+##All models' paths are here:
+proto_encoder = 'pretrained/'+'proto_nn_encoder.pkl'
+app_encoder = 'pretrained/'+'app_nn_encoder.pkl'
+nn_model = 'pretrained/'+'nn_debug.h5'
+norm = 'pretrained/'+'norm_zscore.npy'
 
 processed_trn_data = 'X.npy'
 processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
 processed_tst_label = 'y_test.npy'
-
 
 def parse_arg():
     parser = argparse.ArgumentParser()
@@ -44,20 +46,19 @@ def parse_arg():
     return parser.parse_args()
 
 def genData(files, app_name, proto_name, train_file=True):
-    ##load data from csv file, and process it into numpy array
-
+    ##load data from csv file, and pre-process it into numpy array
     #app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 4 and 9(app name) has 45
     app_id = 0
     proto_id = 0
     label = {'Normal':1, 'Probing-Nmap':3, 'Probing-Port sweep':4, 'Probing-IP sweep':2, 'DDOS-smurf':0}#attr -1
     data_n = 0
     data = []
-    normal_size = 0
-    time_mark = []
-    ip_mark = [] 
-    normal_id = []
-    abnormal_id = []
-    dat_id = 0
+    #normal_size = 0
+    #time_mark = []
+    #ip_mark = [] 
+    #normal_id = []
+    #abnormal_id = []
+    #dat_id = 0
 
     for file_name in files:
         with open(file_name, newline='') as f:
@@ -77,7 +78,7 @@ def genData(files, app_name, proto_name, train_file=True):
                 
     X = np.zeros((data_n, num_feature))
     y = np.zeros((data_n, num_class))
-    dat_i = 0
+    #dat_i = 0
 
     for datum_i in range(data_n):
         x_i = 0
@@ -186,7 +187,7 @@ def genData(files, app_name, proto_name, train_file=True):
     return X, y
 
 def BalancedData(X, y):
-    
+    #downsampling normal data
     y_id = np.argmax(y, axis=-1)
     NORMAL_OFFSET = 0
     normal_id = []
@@ -224,31 +225,38 @@ def BalancedData(X, y):
 
     return X_bal, y_bal
 
-def Normalization(X_train, X_test, norm_std):
-    ##normalization -> [0, 1]
+def Normalization(X_train, X_test, norm_zscore):
+    ##normalization -> z-score, mean=0.5, std=0.5
     for x_i in range(15):
         
         concat = np.zeros(len(X_train)+len(X_test))
         concat[:len(X_train)] = X_train[:, x_i]
         concat[len(X_train):] = X_test[:, x_i]
-        #mean = np.mean(concat)
+        mean = np.mean(concat)
         std = np.std(concat)
-        norm_std[x_i] = std
-        X_train[:, x_i] = (X_train[:, x_i])/std
-        X_test[:, x_i] = (X_test[:, x_i])/std
+        norm_zscore[0, x_i] = mean
+        norm_zscore[1, x_i] = std
+        X_train[:, x_i] = 0.5*(X_train[:, x_i]-mean)/std + 0.5
+        X_test[:, x_i] = 0.5*(X_test[:, x_i]-mean)/std + 0.5
         
 
 class nnModel():
     def __init__(self):
-        unit_size = 16
+        #model parameters
+        unit_size = 32
+        dp_rate = 0.2
+        l_rate = 0.001
 
         self.model = Sequential()
-        self.model.add(Dense(32, activation='relu', input_shape=(num_feature,)))
-        self.model.add(Dropout(0.2))
-        self.model.add(Dense(32, activation='relu'))
-        self.model.add(Dropout(0.2))
+        self.model.add(Dense(unit_size, activation='relu', input_shape=(num_feature,)))
+        self.model.add(Dropout(dp_rate))
+        self.model.add(Dense(unit_size, activation='relu'))
+        self.model.add(Dropout(dp_rate))
+        #self.model.add(Dense(unit_size, activation='relu'))
+        #self.model.add(Dropout(dp_rate))
         self.model.add(Dense(num_class, activation='softmax'))
-        self.model.compile(loss='categorical_crossentropy', optimizer='Adam', metrics=['accuracy'])
+        self.optimizer = optimizers.Adam(lr=l_rate)
+        self.model.compile(loss='categorical_crossentropy', optimizer=self.optimizer, metrics=['accuracy'])
         self.model.summary()
 
     def trainModel(self, X, y, batch_size):
@@ -275,15 +283,18 @@ if __name__ == '__main__':
     #exp_id = args.id
     if args.pretrained == "True":
         pretrained = True
+    
     ## data preprocessing
     print('preprocessing')
     split = 0.8
-    norm_std = np.zeros(15)
+    #zscore[0, ] = mean
+    #zsocre[1, ] = std
+    norm_zscore = np.zeros((2, 15))
     app_name={}
     proto_name={}
+    
     ## load data (training, validation and testing)
     if not pretrained:
-
         if os.path.isfile(processed_trn_data) and os.path.isfile(processed_trn_label):
             X = np.load(processed_trn_data)
             y = np.load(processed_trn_label)
@@ -317,26 +328,29 @@ if __name__ == '__main__':
         num_tst = len(X_tst)
         print('num training data: ' + str(num_trn)) 
         print('num testing data: ' + str(num_tst)) 
-        Normalization(X, X_tst, norm_std)
-    
+        
+        #normalization and balanced
+        Normalization(X, X_tst, norm_zscore)
         X, y = BalancedData(X, y)
+        
         num_trn = len(X)
         print('balanced num training data: ' + str(num_trn)) 
         data_split = int(split*len(X))
         num_val = len(X[data_split:])
+        
         if validation_check:
             y_test = np.argmax(y_tst, axis=-1)
-    
-        if validation_check:
-            shuffle_id = np.arange(num_trn)
-            np.random.seed(7)
-            np.random.shuffle(shuffle_id)
-            X = X[shuffle_id]
-            y = y[shuffle_id]
-            X_train, y_train, X_val, y_val = X[:data_split], y[:data_split], X[data_split:], y[data_split:]
-            val_test = np.argmax(y[data_split:], axis=-1)
-        else:
-            X_train, y_train = X[:], y[:]
+            
+        shuffle_id = np.arange(num_trn)
+        np.random.seed(7)
+        np.random.shuffle(shuffle_id)
+        X = X[shuffle_id]
+        y = y[shuffle_id]
+        X_train, y_train, X_val, y_val = X[:data_split], y[:data_split], X[data_split:], y[data_split:]
+        val_test = np.argmax(y[data_split:], axis=-1)
+        
+        #else:
+        #    X_train, y_train = X[:], y[:]
     
     
     ## build model 
@@ -347,23 +361,27 @@ if __name__ == '__main__':
     if pretrained:
         print('load model')
         model.loadModel(nn_model)
-        norm_std = np.load(norm)
+        norm_zscore = np.load(norm)
         with open(app_encoder, 'rb') as fp:
             app_name = pickle.load(fp)
         with open(proto_encoder, 'rb') as fp:
             proto_name = pickle.load(fp)
     
     ## training (adust hyper parameters)
-    epochs = 35
+    #if validation_check:
+    epochs = 10000
+    #else:
+    #    epochs = 35
     batch_size = 128#2048 is upper bound
 
     if pretrained:
         print('testing')
         for tst_file in args.tst:
-            #data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
+            if validation_check:
+                data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
             X, _ = genData([tst_file], app_name, proto_name, False)
             for x_i in range(15):
-                X[:, x_i] = (X[:, x_i])/norm_std[x_i]
+                X[:, x_i] = 0.5*(X[:, x_i]-norm_zscore[0, x_i])/norm_zscore[1, x_i] + 0.5
 
             nn_pred, nn_prob = model.testModel(X)
             df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_prob)
@@ -396,8 +414,11 @@ if __name__ == '__main__':
                 label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
                 test['label'] = ans['pred']
                 test['label'] = test['label'].apply(lambda x: label_map[x])
-                #dat_tst = data_tst.copy()
-                #main_.evaluation(dat_tst, y_pred)
+                
+                if validation_check:
+                    dat_tst = data_tst.copy()
+                    main.evaluation(dat_tst, y_pred)
+                
                 if time_setting == 'minute':
                     test.to_csv(tst_file[:-4]+'_'+time_setting+'_nn_predicted.csv', index=False)
                 elif time_setting == 'hour':
@@ -405,14 +426,24 @@ if __name__ == '__main__':
 
     else:
         print('training')
+        prev_loss = 10000
+        cur_loss = prev_loss
+        stop_count = 0
         for ep in range(epochs):
             print('Epoch: ' + str(ep+1) + '/' + str(epochs))
             model.trainModel(X_train, y_train, batch_size)
         
-            if validation_check:
-                val_acc = model.validationModel(X_val, y_val)
-                print('val acc: ' + str(val_acc))
-
+            #if validation_check:
+            val_acc = model.validationModel(X_val, y_val)
+            print('val acc: ' + str(val_acc))
+            cur_loss = val_acc[0]
+            if prev_loss > cur_loss:
+                prev_loss = cur_loss
+                stop_count = 0
+            else:
+                stop_count += 1
+            if stop_count >= early_stop_patience:
+                break
 
     ## testing
     if not pretrained:
@@ -423,9 +454,8 @@ if __name__ == '__main__':
             y_pred, y_prob = model.testModel(X_tst)
             xgb.eval(y_test, y_pred)
 
-    ## save model
-    if not pretrained:
+        ## save model
         print('save model')
         model.saveModel(nn_model)
-        np.save(norm, norm_std)        
+        np.save(norm, norm_zscore)        
 
