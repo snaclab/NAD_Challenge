@@ -244,7 +244,7 @@ if __name__ == '__main__':
     
         # preprocess data
         Processor = Preprocessor()
-        df_trn = Processor.data_balance(df_trn)
+        # df_trn = Processor.data_balance(df_trn)
         Processor.one_hot_fit(df_trn, 'app', 'app')
         Processor.one_hot_fit(df_trn, 'proto', 'proto')
         Processor.label_fit(df_trn, 'label', 'label')

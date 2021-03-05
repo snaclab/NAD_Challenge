@@ -5,6 +5,7 @@ import numpy as np
 import xgb
 import main
 import preprocess
+import postprocess
 import argparse
 from keras.models import Sequential, load_model
 from keras.layers import Dropout, Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten, Masking
@@ -29,6 +30,7 @@ early_stop_patience = 10
 ##All models' paths are here:
 proto_encoder = 'pretrained/'+'proto_nn_encoder.pkl'
 app_encoder = 'pretrained/'+'app_nn_encoder.pkl'
+# TODO: merge 前記得改
 nn_model = 'pretrained/'+'nn_debug.h5'
 norm = 'pretrained/'+'norm_zscore.npy'
 
@@ -37,11 +39,48 @@ processed_trn_label = 'y.npy'
 processed_tst_data = 'X_test.npy'
 processed_tst_label = 'y_test.npy'
 
+
+class nnModel():
+    def __init__(self):
+        #model parameters
+        unit_size = 32
+        dp_rate = 0.2
+        l_rate = 0.001
+
+        self.model = Sequential()
+        self.model.add(Dense(unit_size, activation='relu', input_shape=(num_feature,)))
+        self.model.add(Dropout(dp_rate))
+        self.model.add(Dense(unit_size, activation='relu'))
+        self.model.add(Dropout(dp_rate))
+        #self.model.add(Dense(unit_size, activation='relu'))
+        #self.model.add(Dropout(dp_rate))
+        self.model.add(Dense(num_class, activation='softmax'))
+        self.optimizer = optimizers.Adam(lr=l_rate)
+        self.model.compile(loss='categorical_crossentropy', optimizer=self.optimizer, metrics=['accuracy'])
+        self.model.summary()
+
+    def trainModel(self, X, y, batch_size):
+        history = self.model.fit(X, y, epochs=1, batch_size=batch_size)
+    
+    def validationModel(self, X, y):
+        results = self.model.evaluate(X, y, batch_size=2048)
+        return results
+
+    def testModel(self, X):
+        results = self.model.predict(X, batch_size=2048)
+        y_pred = np.argmax(results, axis=-1)
+        return y_pred, results
+
+    def saveModel(self, model_n):
+        self.model.save(model_n)
+    def loadModel(self, model_n):
+        self.model = load_model(model_n)
+
 def parse_arg():
     parser = argparse.ArgumentParser()
     parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
     parser.add_argument('--tst', nargs='+', help='input testing dataset', required=False)
-    parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
+    parser.add_argument('--pretrained', help='if there is pretrained encoder', type=bool, default=False)
     #parser.add_argument('--id', help='experiment_id', default=False)
     return parser.parse_args()
 
@@ -59,7 +98,7 @@ def genData(files, app_name, proto_name, train_file=True):
     #normal_id = []
     #abnormal_id = []
     #dat_id = 0
-
+    #TODO: read preprocessed csv -> npy
     for file_name in files:
         with open(file_name, newline='') as f:
             reader = csv.reader(f)
@@ -193,7 +232,8 @@ def BalancedData(X, y):
     normal_id = []
     abnormal_id = []
     seq_id = {}
-    
+
+    # TODO: use numpy value count 
     for i in range(len(y_id)):
         #if train_file:
         if y_id[i] != 1:
@@ -238,224 +278,116 @@ def Normalization(X_train, X_test, norm_zscore):
         norm_zscore[1, x_i] = std
         X_train[:, x_i] = 0.5*(X_train[:, x_i]-mean)/std + 0.5
         X_test[:, x_i] = 0.5*(X_test[:, x_i]-mean)/std + 0.5
-        
 
-class nnModel():
-    def __init__(self):
-        #model parameters
-        unit_size = 32
-        dp_rate = 0.2
-        l_rate = 0.001
-
-        self.model = Sequential()
-        self.model.add(Dense(unit_size, activation='relu', input_shape=(num_feature,)))
-        self.model.add(Dropout(dp_rate))
-        self.model.add(Dense(unit_size, activation='relu'))
-        self.model.add(Dropout(dp_rate))
-        #self.model.add(Dense(unit_size, activation='relu'))
-        #self.model.add(Dropout(dp_rate))
-        self.model.add(Dense(num_class, activation='softmax'))
-        self.optimizer = optimizers.Adam(lr=l_rate)
-        self.model.compile(loss='categorical_crossentropy', optimizer=self.optimizer, metrics=['accuracy'])
-        self.model.summary()
-
-    def trainModel(self, X, y, batch_size):
-        history = self.model.fit(X, y, epochs=1, batch_size=batch_size)
+def Train(X, y):
+    split = 0.8
+    num_trn = len(X)
     
-    def validationModel(self, X, y):
-        results = self.model.evaluate(X, y, batch_size=2048)
-        return results
+    ## build model 
+    print('build model')
+    model = nnModel()
 
-    def testModel(self, X):
-        results = self.model.predict(X, batch_size=2048)
-        y_pred = np.argmax(results, axis=-1)
-        return y_pred, results
+    print('balanced num training data: ' + str(num_trn)) 
+    data_split = int(split*len(X))
+    num_val = len(X[data_split:])
+        
+    shuffle_id = np.arange(num_trn)
+    np.random.seed(7)
+    np.random.shuffle(shuffle_id)
+    X = X[shuffle_id]
+    y = y[shuffle_id]
+    X_train, y_train, X_val, y_val = X[:data_split], y[:data_split], X[data_split:], y[data_split:]
+    val_test = np.argmax(y[data_split:], axis=-1)
+    
+    print('training')
+    epochs = 10000
+    batch_size = 128 # 2048 is upper bound
+    prev_loss = 10000
+    cur_loss = prev_loss
+    stop_count = 0
+    for ep in range(epochs):
+        print('Epoch: ' + str(ep+1) + '/' + str(epochs))
+        model.trainModel(X_train, y_train, batch_size)
+    
+        #if validation_check:
+        val_acc = model.validationModel(X_val, y_val)
+        print('val acc: ' + str(val_acc))
+        cur_loss = val_acc[0]
+        if prev_loss > cur_loss:
+            prev_loss = cur_loss
+            stop_count = 0
+        else:
+            stop_count += 1
+        if stop_count >= early_stop_patience:
+            break
 
-    def saveModel(self, model_n):
-        self.model.save(model_n)
-    def loadModel(self, model_n):
-        self.model = load_model(model_n)
+    return model
 
 if __name__ == '__main__':
     
     args = parse_arg()
-    pretrained = False
+    pretrained = args.pretrained
     #exp_id = args.id
-    if args.pretrained == "True":
-        pretrained = True
     
-    ## data preprocessing
-    print('preprocessing')
-    split = 0.8
+    # TODO: 讀檔轉檔 train.csv and 全部的 tst_file.csv
+
+    norm_zscore = np.zeros((2, 15))
+    Normalization(X, X_tst, norm_zscore)
+    
+    np.save(norm, norm_zscore)
+    
     #zscore[0, ] = mean
     #zsocre[1, ] = std
-    norm_zscore = np.zeros((2, 15))
-    app_name={}
-    proto_name={}
     
     ## load data (training, validation and testing)
     if not pretrained:
-        if os.path.isfile(processed_trn_data) and os.path.isfile(processed_trn_label):
-            X = np.load(processed_trn_data)
-            y = np.load(processed_trn_label)
-            with open(app_encoder, 'rb') as fp:
-                app_name = pickle.load(fp)
-            with open(proto_encoder, 'rb') as fp:
-                proto_name = pickle.load(fp)
-        else:
-            X, y = genData(args.trn, app_name, proto_name)
-            np.save(processed_trn_data, X)
-            np.save(processed_trn_label, y)
-            with open(app_encoder, 'wb') as fp:
-                pickle.dump(app_name, fp)    
-            with open(proto_encoder, 'wb') as fp:
-                pickle.dump(proto_name, fp)    
-    
-        if os.path.isfile(processed_tst_data):
-            X_tst = np.load(processed_tst_data)
-            if validation_check:
-                y_tst = np.load(processed_tst_label)
-        else:
-            if validation_check:
-                X_tst, y_tst = genData(args.tst, app_name, proto_name, False)
-                np.save(processed_tst_data, X_tst)
-                np.save(processed_tst_label, y_tst)
-            else:
-                X_tst, _ = genData(args.tst, app_name, proto_name, False)
-                np.save(processed_tst_data, X_tst)
-    
         num_trn = len(X)
         num_tst = len(X_tst)
         print('num training data: ' + str(num_trn)) 
         print('num testing data: ' + str(num_tst)) 
         
-        #normalization and balanced
-        Normalization(X, X_tst, norm_zscore)
+        #balance data
         X, y = BalancedData(X, y)
-        
-        num_trn = len(X)
-        print('balanced num training data: ' + str(num_trn)) 
-        data_split = int(split*len(X))
-        num_val = len(X[data_split:])
-        
+
         if validation_check:
             y_test = np.argmax(y_tst, axis=-1)
-            
-        shuffle_id = np.arange(num_trn)
-        np.random.seed(7)
-        np.random.shuffle(shuffle_id)
-        X = X[shuffle_id]
-        y = y[shuffle_id]
-        X_train, y_train, X_val, y_val = X[:data_split], y[:data_split], X[data_split:], y[data_split:]
-        val_test = np.argmax(y[data_split:], axis=-1)
+       
+        model = Train(X, y)
         
-        #else:
-        #    X_train, y_train = X[:], y[:]
+        ## save model
+        print('save model')
+        model.saveModel(nn_model)
+        
+    y_pred, y_prob = model.testModel(X_tst)
+
+    ## testing
+    if validation_check:
+        print('testing')
+        xgb.eval(y_test, y_pred)
     
-    
-    ## build model 
-    print('build model')
-    model = nnModel()
-    
-    ## load model 
     if pretrained:
-        print('load model')
+        print('load testing model')
         model.loadModel(nn_model)
         norm_zscore = np.load(norm)
         with open(app_encoder, 'rb') as fp:
             app_name = pickle.load(fp)
         with open(proto_encoder, 'rb') as fp:
             proto_name = pickle.load(fp)
-    
-    ## training (adust hyper parameters)
-    #if validation_check:
-    epochs = 10000
-    #else:
-    #    epochs = 35
-    batch_size = 128#2048 is upper bound
-
-    if pretrained:
+        
         print('testing')
         for tst_file in args.tst:
-            if validation_check:
-                data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
-            X, _ = genData([tst_file], app_name, proto_name, False)
+            data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
+            data_tst_drop = data_tst.drop(columns=['label'])
+            X = data_tst_drop.to_numpy()
             for x_i in range(15):
                 X[:, x_i] = 0.5*(X[:, x_i]-norm_zscore[0, x_i])/norm_zscore[1, x_i] + 0.5
 
             nn_pred, nn_prob = model.testModel(X)
             df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_prob)
             # postprocess
-            for time_setting in ['minute', 'hour']:
-                test = pd.read_csv(tst_file)
-                ans = test[['time','src']].copy()
-                ans = pd.concat([ans, df_pred], axis=1)
-                ans['time'] = ans['time'].apply(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
-                if time_setting == 'hour':
-                    ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2))
-                elif time_setting == 'minute':
-                    ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2)+str(x.minute).zfill(2))
-                ans['time+src'] = ans['time'].apply(str) + ans['src'].apply(str)
-                ans.drop(columns=['time','src'],inplace=True)
-                d_v = ans.groupby(['time+src']).sum()
-                d_v = d_v.idxmax(axis='columns').to_frame()
-                DIC = {}
-                for idx, row in d_v.iterrows():
-                    DIC[idx] = row[0]
-                ans['pred'] = [1 for i in range(len(ans))]
-                ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
-                if time_setting == 'hour':
-                    m_df = pd.read_csv(tst_file[:-4]+'_minute_nn_predicted.csv')
-                    d_idx = list(m_df[m_df['label']=='DDOS-smurf'].index)
-                    ans.loc[d_idx, 'pred'] = 0
-                y_pred = ans['pred'].values
-            
-                # Transform label and save data
-                label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
-                test['label'] = ans['pred']
-                test['label'] = test['label'].apply(lambda x: label_map[x])
-                
-                if validation_check:
-                    dat_tst = data_tst.copy()
-                    main.evaluation(dat_tst, y_pred)
-                
-                if time_setting == 'minute':
-                    test.to_csv(tst_file[:-4]+'_'+time_setting+'_nn_predicted.csv', index=False)
-                elif time_setting == 'hour':
-                    test.to_csv(tst_file[:-4]+'_nn.csv', index=False)
+            y_pred = postprocess.post_processing(tst_file, df_pred, 'nn', validation_check)
 
-    else:
-        print('training')
-        prev_loss = 10000
-        cur_loss = prev_loss
-        stop_count = 0
-        for ep in range(epochs):
-            print('Epoch: ' + str(ep+1) + '/' + str(epochs))
-            model.trainModel(X_train, y_train, batch_size)
-        
-            #if validation_check:
-            val_acc = model.validationModel(X_val, y_val)
-            print('val acc: ' + str(val_acc))
-            cur_loss = val_acc[0]
-            if prev_loss > cur_loss:
-                prev_loss = cur_loss
-                stop_count = 0
-            else:
-                stop_count += 1
-            if stop_count >= early_stop_patience:
-                break
+            if validation_check:
+                main.evaluation(data_tst.copy(), y_pred)
 
-    ## testing
-    if not pretrained:
-        if validation_check:
-            print('testing')
-            val_pred, val_prob = model.testModel(X_val)
-            xgb.eval(val_test, val_pred)
-            y_pred, y_prob = model.testModel(X_tst)
-            xgb.eval(y_test, y_pred)
-
-        ## save model
-        print('save model')
-        model.saveModel(nn_model)
-        np.save(norm, norm_zscore)        
-
+    
