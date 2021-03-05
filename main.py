@@ -30,7 +30,7 @@ def evaluation(data_tst, y_pred):
     cost_matrix = np.array([[0,2,1,1,1],[2,0,1,1,1],[2,1,0,1,1],[2,1,1,0,1],[2,1,1,1,0]])
     conf_matrix = confusion_matrix(Y_test, y_pred)
     cost = np.multiply(cost_matrix, conf_matrix)
-    print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost))))+0.7*macro_fbeta_score)
+    print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost)*len(data_tst))))+0.7*macro_fbeta_score)
 
 if __name__ == '__main__':
     args = parse_arg()
