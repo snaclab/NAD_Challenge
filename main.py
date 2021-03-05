@@ -50,7 +50,7 @@ if __name__ == '__main__':
         y_pred = xgb.XGB_prediction(data_tst, model)
         df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         
-        y_pred_final = postprocess.post_processing(tst_file, df_pred, run_ensemble, args.eval)
+        y_pred_final = postprocess.post_processing(tst_file, df_pred, 'xgb')
         
         if run_ensemble:
             ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
