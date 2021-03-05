@@ -81,7 +81,7 @@ def add_features(df):
     df['prt_zero'] = ((df['spt']==0) & (df['dpt']==0)).astype('int64')
     df['flow_diff'] = df['in (bytes)']-df['out (bytes)']
     df['flow_diff'] = df['flow_diff'].apply(lambda x: 0 if x==0 else (1 if x>0 else -1))
-    #df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
+    df['dst_ip_end_with_255'] = df['dst'].apply(lambda x: int(x.endswith('.255')))
     return df
 
 def inverse_one_hot_encoding(df, col):
