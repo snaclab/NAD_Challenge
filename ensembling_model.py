@@ -8,6 +8,8 @@ from numpy.linalg import norm
 from itertools import product
 import main
 import random
+import postprocess
+import pickle
 
 def XGB_training(data, n_class):
     X = data[[c for c in data.columns if c != 'label']].copy()
@@ -41,7 +43,7 @@ def normalize(weights):
     # return normalized vector (unit norm)
     return weights / result
 
-def evaluate(data, w):
+def produce_result(data, w):
     weights = np.repeat([w], repeats=len(data), axis=0)
     w_data = np.multiply(data.to_numpy(), weights)
     f_0 = w_data[:, :4].sum(axis=1).reshape(-1,1)
@@ -53,6 +55,22 @@ def evaluate(data, w):
     data = pd.DataFrame(data=f, columns=[0, 1, 2, 3, 4])
     data = data.idxmax(axis='columns').to_frame()
     y_pred = data[[0]].copy().values.reshape(1, -1)[0]
+    return y_pred
+
+def produce_prob(data, w):
+    weights = np.repeat([w], repeats=len(data), axis=0)
+    w_data = np.multiply(data.to_numpy(), weights)
+    f_0 = w_data[:, :4].sum(axis=1).reshape(-1,1)
+    f_1 = w_data[:, 4:8].sum(axis=1).reshape(-1,1)
+    f_2 = w_data[:, 8:12].sum(axis=1).reshape(-1,1)
+    f_3 = w_data[:, 12:16].sum(axis=1).reshape(-1,1)
+    f_4 = w_data[:, 16:].sum(axis=1).reshape(-1,1)
+    f = np.concatenate((f_0, f_1, f_2, f_3, f_4), axis=1)
+    data = pd.DataFrame(data=f, columns=[0, 1, 2, 3, 4])
+    return data
+
+
+def evaluate(y_pred):
     data_tst = pd.read_csv('../nad/test_no.csv')
     score = main.evaluation(data_tst, y_pred)
     return score
@@ -62,25 +80,74 @@ def grid_search(data):
     # define weights to consider
     w = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     best_score, best_weights = 0.0, None
+    '''
     # iterate all possible combinations (cartesian product)
-    W = []
-    for i in range(100000):
-        weights = []
-        for j in range(20):
-            w_ = random.choice(w)
-            weights.append(w_)
-        if len(set(weights)) == 1:
-            continue
-        W.append(normalize(weights))
-    W = np.array(W)
-    print(W)
-    for weights in W:
+    Weights = []
+    for i in range(500):
+        W = []
+        for k in range(5):
+            weights = []
+            if k==0:
+                for j in range(4):
+                    if j==0 or j==1:
+                        diff = random.gauss(0, 0.1)
+                        w_ = 0.5
+                        w_ += diff
+                    else:
+                        w_ = random.uniform(0, 0.01)
+                    w_ = max(0, w_)
+                    weights.append(w_)
+            elif k==2:
+                for j in range(4):
+                    if j==0:
+                        diff = random.gauss(0, 0.1)
+                        w_ = 0.05
+                        w_ += diff
+                    elif j==2:
+                        diff = random.gauss(0, 0.1)
+                        w_ = 0.95
+                        w_ += diff
+                    else:
+                        w_ = random.gauss(0, 0.01)
+                    w_ = max(0, w_)
+                    weights.append(w_)
+            elif k==4:
+                for j in range(4):
+                    if j==0:
+                        diff = random.gauss(0, 0.1)
+                        w_ = 0.95
+                        w_ += diff
+                    elif j==2:
+                        diff = random.gauss(0, 0.1)
+                        w_ = 0.05
+                        w_ += diff
+                    else:
+                        w_ = random.gauss(0, 0.01)
+                    w_ = max(0, w_)
+                    weights.append(w_)
+            else:
+                for j in range(4):
+                    w_ = random.choice(w)
+                    w_ = max(0, w_)
+                    weights.append(w_)
+            W.extend(normalize(weights))
+        Weights.append(W)
+    Weights = np.array(Weights)
+    for idx, weights in enumerate(Weights):
         # skip if all weights are equal
-        score = evaluate(data.copy(), weights)
+        result = produce_result(data.copy(), weights)
+        score = evaluate(result)
         if score > best_score:
             best_score, best_weights = score, weights
             print('>%s %.3f' % (best_weights, best_score))
+        if idx%100==0:
+            print(idx)
     print('>%s %.3f' % (best_weights, best_score))
+    '''
+    # with open("best_weights_lgbm.txt", "wb") as fp:
+    #     pickle.dump(best_weights, fp)
+    with open("best_weights_lgbm.txt", "rb") as fp:
+        best_weights = pickle.load(fp)
     return list(best_weights)
 
 
@@ -105,3 +172,7 @@ def read_data():
 XGB, NN_DDOS, NN_IP, LGBM = read_data()
 df = agg_data(XGB, NN_DDOS, NN_IP, LGBM)
 weights = grid_search(df.copy())
+df_pred = produce_prob(df, weights)
+y_pred_final = postprocess.post_processing('../nad/test_no.csv', df_pred, False, True)
+data_tst = pd.read_csv('../nad/test_no.csv')
+main.evaluation(data_tst.copy(), y_pred_final)
