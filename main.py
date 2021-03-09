@@ -3,7 +3,7 @@ import pandas as pd
 import argparse
 import preprocess
 import postprocess
-import xgb
+import xgb, nn
 from xgboost import plot_importance
 import matplotlib.pyplot as plt
 import datetime
@@ -39,20 +39,25 @@ if __name__ == '__main__':
 
     # training process
     if str(args.pretrained)=='True':
-        model = xgb.load_model('pretrained/model.pkl')
+        #model = xgb.load_model('pretrained/model.pkl')
+        model = nn.load_model('pretrained/nn.h5')
     else:
         data_trn = pd.read_csv(args.trn)
-        model = xgb.XGB_training(data_trn, n_class)
-        xgb.save_model(model, 'pretrained/model.pkl')
+        #model = xgb.XGB_training(data_trn, n_class)
+        #xgb.save_model(model, 'pretrained/model.pkl')
+        norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
+        model = nn.nn_training(data_trn, n_class, norm_zscore)
+        nn.save_model(model, 'pretrained/nn.h5')
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
         # predictions
-        y_pred = xgb.XGB_prediction(data_tst, model)
+        #y_pred = xgb.XGB_prediction(data_tst, model)
+        y_pred = nn.nn_prediction(data_tst, model)
         df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         
         y_pred_final = postprocess.post_processing(tst_file, df_pred, run_ensemble, args.eval)
         
-        if run_ensemble:
-            ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
-        elif str(args.eval) == 'True':
-            evaluation(data_tst.copy(), y_pred_final)
+        #if run_ensemble:
+        #    ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
+        #elif str(args.eval) == 'True':
+        evaluation(data_tst.copy(), y_pred_final)
