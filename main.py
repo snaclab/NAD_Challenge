@@ -35,6 +35,7 @@ def evaluation(data_tst, y_pred):
 if __name__ == '__main__':
     args = parse_arg()
     run_ensemble = False
+    # combined or dynamic
     voting_method = 'combined'
     n_class = 5
 

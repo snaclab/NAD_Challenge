@@ -47,27 +47,28 @@ def align_time(df):
 
 def gen_new_label(ans):
     ans['time+src'] = ans['time'].apply(str) + ans['src'].apply(str)
-    ans = ans[['time+src', '0', '1', '2', '3', '4']]
-    ans.rename(columns={'0': 0, '1': 1, '2': 2, '3': 3, '4': 4}, inplace=True)
+    ans = ans[['time+src', 0, 1, 2, 3, 4]]
     d_v = ans.groupby(['time+src']).sum()
     d_v = d_v.idxmax(axis='columns').to_frame()
     DIC = {}
     for idx, row in d_v.iterrows():
         DIC[idx] = row[0]
-    ans['pred'] = [1 for i in range(len(ans))]
+    ans['pred'] = 1
     ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
     return ans
 
 def voting_dynamic(tst_file, test_df, df_pred):
-    # ans = test_df[['time','src']].copy()
-    # ans = pd.concat([ans, df_pred], axis=1)
-    # ans_h, ans_m = align_time(ans.copy())
-    # ans_h = ans_h.sort_index()
-    # ans_m = ans_m.sort_index()
-    # ans_h.to_csv(tst_file[:-4]+'_hour_align_time.csv', index=False)
-    # ans_m.to_csv(tst_file[:-4]+'_minute_align_time.csv', index=False)
+    ans = test_df[['time','src']].copy()
+    ans = pd.concat([ans, df_pred], axis=1)
+    ans_h, ans_m = align_time(ans.copy())
+    ans_h = ans_h.sort_index()
+    ans_m = ans_m.sort_index()
+    ans_h.to_csv(tst_file[:-4]+'_hour_align_time.csv', index=False)
+    ans_m.to_csv(tst_file[:-4]+'_minute_align_time.csv', index=False)
     ans_h = pd.read_csv(tst_file[:-4]+'_hour_align_time.csv')
     ans_m = pd.read_csv(tst_file[:-4]+'_minute_align_time.csv')
+    ans_h.rename(columns={'0': 0, '1': 1, '2': 2, '3': 3, '4': 4}, inplace=True)
+    ans_m.rename(columns={'0': 0, '1': 1, '2': 2, '3': 3, '4': 4}, inplace=True)
     ans_h = gen_new_label(ans_h.copy())
     ans_m = gen_new_label(ans_m.copy())
 
@@ -81,16 +82,7 @@ def voting_combined(test_df, df_pred, time_setting):
         ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2))
     elif time_setting == 'minute':
         ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2)+str(x.minute).zfill(2))
-    ans['time+src'] = ans['time'].apply(str) + ans['src'].apply(str)
-    ans.drop(columns=['time','src'],inplace=True)
-    d_v = ans.groupby(['time+src']).sum()
-    d_v = d_v.idxmax(axis='columns').to_frame()
-    DIC = {}
-    for idx, row in d_v.iterrows():
-        DIC[idx] = row[0]
-    ans['pred'] = [1 for i in range(len(ans))]
-    ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
-
+    ans = gen_new_label(ans.copy())
     return ans.copy()
 
 def transform_label(ans_df):
