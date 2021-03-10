@@ -34,7 +34,9 @@ def evaluation(data_tst, y_pred):
 
 if __name__ == '__main__':
     args = parse_arg()
-    run_ensemble = True
+    run_ensemble = False
+    # combined or dynamic
+    voting_method = 'combined'
     n_class = 5
 
     # training process
@@ -57,7 +59,10 @@ if __name__ == '__main__':
         y_pred = xgb.XGB_prediction(data_tst, model)
         df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         
-        y_pred_final = postprocess.post_processing(tst_file, df_pred, 'xgb')
+        if voting_method=='dynamic':
+            y_pred_final = postprocess.post_processing_dynamic(tst_file, df_pred, 'xgb')
+        else:
+            y_pred_final = postprocess.post_processing_combined(tst_file, df_pred, 'xgb')
         
         nn_pred = nn.nn_prediction(data_tst, nn_model, norm_zscore)
         df_nn_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_pred)
