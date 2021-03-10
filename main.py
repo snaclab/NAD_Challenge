@@ -48,9 +48,8 @@ if __name__ == '__main__':
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
         # predictions
-        y_pred_prob, y_pred = xgb.XGB_prediction(data_tst, model)
-        evaluation(data_tst.copy(), y_pred)
-        df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred_prob)
+        y_pred = xgb.XGB_prediction(data_tst, model)
+        df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         
         if voting_method=='dynamic':
             y_pred_final = postprocess.post_processing_dynamic(tst_file, df_pred, 'xgb')
