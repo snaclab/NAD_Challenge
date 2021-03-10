@@ -19,14 +19,14 @@ import pickle
 import pandas as pd
 import datetime
 
-#if the server does not have GPU, remove this line
+##if the server does not have GPU, remove this line
 os.environ["CUDA_VISIBLE_DEVICES"]="1"  
 
 class nnModel():
     def __init__(self, num_feature, num_class):
         #model parameters
-        unit_size = 32
-        dp_rate = 0.2
+        unit_size = 2048
+        dp_rate = 0.5
         l_rate = 0.001
 
         self.model = Sequential()
@@ -34,8 +34,8 @@ class nnModel():
         self.model.add(Dropout(dp_rate))
         self.model.add(Dense(unit_size, activation='relu'))
         self.model.add(Dropout(dp_rate))
-        #self.model.add(Dense(unit_size, activation='relu'))
-        #self.model.add(Dropout(dp_rate))
+        self.model.add(Dense(unit_size, activation='relu'))
+        self.model.add(Dropout(dp_rate))
         self.model.add(Dense(num_class, activation='softmax'))
         self.optimizer = optimizers.Adam(lr=l_rate)
         self.model.compile(loss='categorical_crossentropy', optimizer=self.optimizer, metrics=['accuracy'])
@@ -151,8 +151,7 @@ def nn_training(data, n_class, norm_zscore):
 
 def nn_prediction(data, model, norm_zscore):
         
-    data_drop = data.drop(columns=['label'])
-    X = data_drop.to_numpy()
+    X = data[[c for c in data.columns if c != 'label']].copy().values
     X_normalized = normalize_data(X, norm_zscore)
 
     ## testing and prediction

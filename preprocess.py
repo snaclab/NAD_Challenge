@@ -275,10 +275,10 @@ if __name__ == '__main__':
     ##normalization gets data's mean and std, storing them for nn.
     ##need to discuss this part because normalization requires to see all trn and tst data.
     #if str(args.pretrained)=='False':
-    #    f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
-    #    f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
-    #    df_all = pd.concat(f_all)
-    #    norm_zscore = nn.compute_norm(df_all)
-    #    nn.save_norm("pretrained/norm_zscore.npy", norm_zscore)
+        f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
+        f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
+        df_all = pd.concat(f_all)
+        norm_zscore = nn.compute_norm(df_all)
+        nn.save_norm("pretrained/norm_zscore.npy", norm_zscore)
     
 

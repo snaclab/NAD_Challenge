@@ -66,4 +66,5 @@ if __name__ == '__main__':
         if run_ensemble:
             ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
         elif str(args.eval) == 'True':
+            evaluation(data_tst.copy(), y_pred_final)
             evaluation(data_tst.copy(), nn_pred_final)
