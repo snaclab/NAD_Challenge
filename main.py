@@ -38,7 +38,7 @@ if __name__ == '__main__':
     n_class = 5
 
     # training process
-    if str(args.pretrained) == 'True':
+    if str(args.pretrained)=='True':
         model = xgb.load_model('pretrained/model.pkl')
        
         norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
