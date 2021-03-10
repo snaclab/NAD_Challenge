@@ -58,20 +58,40 @@ def gen_new_label(ans):
     ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
     return ans
 
-def voting(tst_file, test_df, df_pred):
-    ans = test_df[['time','src']].copy()
-    ans = pd.concat([ans, df_pred], axis=1)
-    ans_h, ans_m = align_time(ans.copy())
-    ans_h = ans_h.sort_index()
-    ans_m = ans_m.sort_index()
-    ans_h.to_csv(tst_file[:-4]+'_hour_align_time.csv', index=False)
-    ans_m.to_csv(tst_file[:-4]+'_minute_align_time.csv', index=False)
+def voting_dynamic(tst_file, test_df, df_pred):
+    # ans = test_df[['time','src']].copy()
+    # ans = pd.concat([ans, df_pred], axis=1)
+    # ans_h, ans_m = align_time(ans.copy())
+    # ans_h = ans_h.sort_index()
+    # ans_m = ans_m.sort_index()
+    # ans_h.to_csv(tst_file[:-4]+'_hour_align_time.csv', index=False)
+    # ans_m.to_csv(tst_file[:-4]+'_minute_align_time.csv', index=False)
     ans_h = pd.read_csv(tst_file[:-4]+'_hour_align_time.csv')
     ans_m = pd.read_csv(tst_file[:-4]+'_minute_align_time.csv')
     ans_h = gen_new_label(ans_h.copy())
     ans_m = gen_new_label(ans_m.copy())
 
     return ans_h.copy(), ans_m.copy()
+
+def voting_combined(test_df, df_pred, time_setting):
+    ans = test_df[['time','src']].copy()
+    ans = pd.concat([ans, df_pred], axis=1)
+    ans['time'] = ans['time'].apply(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
+    if time_setting == 'hour':
+        ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2))
+    elif time_setting == 'minute':
+        ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2)+str(x.minute).zfill(2))
+    ans['time+src'] = ans['time'].apply(str) + ans['src'].apply(str)
+    ans.drop(columns=['time','src'],inplace=True)
+    d_v = ans.groupby(['time+src']).sum()
+    d_v = d_v.idxmax(axis='columns').to_frame()
+    DIC = {}
+    for idx, row in d_v.iterrows():
+        DIC[idx] = row[0]
+    ans['pred'] = [1 for i in range(len(ans))]
+    ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
+
+    return ans.copy()
 
 def transform_label(ans_df):
     label_map = {
@@ -87,13 +107,13 @@ def transform_label(ans_df):
     return ans['label']
 
 # postprocess
-def post_processing(tst_file, df_pred, model_name):
+def post_processing_dynamic(tst_file, df_pred, model_name):
     test = pd.read_csv(tst_file)
-    ans_h, ans_m = voting(tst_file, test, df_pred)
+    ans_h, ans_m = voting_dynamic(tst_file, test, df_pred)
+    data_tst = pd.read_csv(tst_file)
     test_m = pd.read_csv(tst_file)
     test_m['label'] = transform_label(ans_m)
     test_m.to_csv(tst_file[:-4]+'_minute_{}_predicted.csv'.format(model_name), index=False)
-
     m_df = pd.read_csv(tst_file[:-4]+'_minute_{}_predicted.csv'.format(model_name))
     d_idx = list(m_df[m_df['label']=='DDOS-smurf'].index)
     ans_h.loc[d_idx, 'pred'] = 0
@@ -102,5 +122,29 @@ def post_processing(tst_file, df_pred, model_name):
     test_h.to_csv(tst_file[:-4]+'_{}_predicted.csv'.format(model_name), index=False)
 
     y_pred = ans_h['pred'].values
+
+    return y_pred
+
+def post_processing_combined(tst_file, df_pred, model_name):
+    for time_setting in ['minute', 'hour']:
+        test = pd.read_csv(tst_file)
+        ans = voting_combined(test, df_pred, time_setting)
+
+        if time_setting == 'hour':
+            m_df = pd.read_csv(tst_file[:-4]+'_minute_predicted.csv')
+            d_idx = list(m_df[m_df['label']=='DDOS-smurf'].index)
+            ans.loc[d_idx, 'pred'] = 0
+        
+        # Transform label and save data
+        test['label'] = transform_label(ans)
+
+        if time_setting == 'minute':
+            test.to_csv(tst_file[:-4]+'_'+time_setting+'_predicted.csv', index=False)
+            continue
+        
+        # only for "hour"
+        test.to_csv(tst_file[:-4]+'_{}.csv'.format(model_name), index=False)
+
+        y_pred = ans['pred'].values
 
     return y_pred
