@@ -245,7 +245,7 @@ if __name__ == '__main__':
     
         # preprocess data
         Processor = Preprocessor()
-        # df_trn = Processor.data_balance(df_trn)
+        df_trn = Processor.data_balance(df_trn)
         Processor.one_hot_fit(df_trn, 'app', 'app')
         Processor.one_hot_fit(df_trn, 'proto', 'proto')
         Processor.label_fit(df_trn, 'label', 'label')
@@ -274,11 +274,11 @@ if __name__ == '__main__':
     ##TODO: do normalization for nn; it needs to concat both trn and tst files.
     ##normalization gets data's mean and std, storing them for nn.
     ##need to discuss this part because normalization requires to see all trn and tst data.
-    if str(args.pretrained)=='False':
-        f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
-        f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
-        df_all = pd.concat(f_all)
-        norm_zscore = nn.compute_norm(df_all)
-        nn.save_norm("pretrained/norm_zscore.npy", norm_zscore)
+    #if str(args.pretrained)=='False':
+    #    f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
+    #    f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
+    #    df_all = pd.concat(f_all)
+    #    norm_zscore = nn.compute_norm(df_all)
+    #    nn.save_norm("pretrained/norm_zscore.npy", norm_zscore)
     
 

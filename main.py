@@ -30,7 +30,7 @@ def evaluation(data_tst, y_pred):
     cost_matrix = np.array([[0,2,1,1,1],[2,0,1,1,1],[2,1,0,1,1],[2,1,1,0,1],[2,1,1,1,0]])
     conf_matrix = confusion_matrix(Y_test, y_pred)
     cost = np.multiply(cost_matrix, conf_matrix)
-    print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost))))+0.7*macro_fbeta_score)
+    print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost)*len(data_tst))))+0.7*macro_fbeta_score)
 
 if __name__ == '__main__':
     args = parse_arg()
@@ -38,26 +38,32 @@ if __name__ == '__main__':
     n_class = 5
 
     # training process
-    if str(args.pretrained)=='True':
-        #model = xgb.load_model('pretrained/model.pkl')
-        model = nn.load_model('pretrained/nn.h5')
+    if str(args.pretrained) == 'True':
+        model = xgb.load_model('pretrained/model.pkl')
+       
+        norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
+        nn_model = nn.load_model('pretrained/nn.h5')
     else:
         data_trn = pd.read_csv(args.trn)
-        #model = xgb.XGB_training(data_trn, n_class)
-        #xgb.save_model(model, 'pretrained/model.pkl')
+        model = xgb.XGB_training(data_trn, n_class)
+        xgb.save_model(model, 'pretrained/model.pkl')
+        
         norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
-        model = nn.nn_training(data_trn, n_class, norm_zscore)
-        nn.save_model(model, 'pretrained/nn.h5')
+        nn_model = nn.nn_training(data_trn, n_class, norm_zscore)
+        nn.save_model(nn_model, 'pretrained/nn.h5')
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
         # predictions
-        #y_pred = xgb.XGB_prediction(data_tst, model)
-        y_pred = nn.nn_prediction(data_tst, model)
+        y_pred = xgb.XGB_prediction(data_tst, model)
         df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         
-        y_pred_final = postprocess.post_processing(tst_file, df_pred, run_ensemble, args.eval)
+        y_pred_final = postprocess.post_processing(tst_file, df_pred, 'xgb')
         
-        #if run_ensemble:
-        #    ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
-        #elif str(args.eval) == 'True':
-        evaluation(data_tst.copy(), y_pred_final)
+        nn_pred = nn.nn_prediction(data_tst, nn_model, norm_zscore)
+        df_nn_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_pred)
+        nn_pred_final = postprocess.post_processing(tst_file, df_nn_pred, 'nn')
+        
+        if run_ensemble:
+            ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
+        elif str(args.eval) == 'True':
+            evaluation(data_tst.copy(), nn_pred_final)
