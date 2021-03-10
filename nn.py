@@ -1,12 +1,17 @@
 
 import tensorflow as tf
 import numpy as np
-#from tensorflow import keras
+from tensorflow import keras
 import xgb
+import main
 import preprocess
+import postprocess
 import argparse
-from keras.models import Sequential, load_model
+from keras.models import Sequential
 from keras.layers import Dropout, Bidirectional, Dense, TimeDistributed, LSTM, Conv1D, Flatten, Masking
+from keras import optimizers
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 import csv
 import os
 import random
@@ -14,241 +19,26 @@ import pickle
 import pandas as pd
 import datetime
 
-##remove these
-#import main_
-#os.environ["CUDA_VISIBLE_DEVICES"]="9"
-validation_check = True
-
-num_feature = 15+4+45+5
-num_class = 5
-#NORMAL_OFFSET = #int(180625*1.3)
-##All models' paths are here:
-proto_encoder = 'pretrained/'+'proto_encoder.pkl'
-app_encoder = 'pretrained/'+'app_encoder.pkl'
-nn_model = 'pretrained/'+'nn.h5'
-norm = 'pretrained/'+'norm_std.npy'
-
-
-processed_trn_data = 'X.npy'
-processed_trn_label = 'y.npy'
-processed_tst_data = 'X_test.npy'
-processed_tst_label = 'y_test.npy'
-
-
-def parse_arg():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
-    parser.add_argument('--tst', nargs='+', help='input testing dataset', required=False)
-    parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
-    #parser.add_argument('--id', help='experiment_id', default=False)
-    return parser.parse_args()
-
-def genData(files, app_name, proto_name, train_file=True):
-    ##load data from csv file, and process it into numpy array
-
-    #app_name = {}#attr 8, 9 are discrete, 8(protocal ID) has 4 and 9(app name) has 45
-    app_id = 0
-    proto_id = 0
-    label = {'Normal':1, 'Probing-Nmap':3, 'Probing-Port sweep':4, 'Probing-IP sweep':2, 'DDOS-smurf':0}#attr -1
-    data_n = 0
-    data = []
-    normal_size = 0
-    time_mark = []
-    ip_mark = [] 
-    normal_id = []
-    abnormal_id = []
-    dat_id = 0
-
-    for file_name in files:
-        with open(file_name, newline='') as f:
-            reader = csv.reader(f)
-            next(reader)
-            for row in reader:
-                data.append(row)
-                
-                if train_file:
-                    if not row[8] in proto_name:
-                        proto_name[row[8]] = proto_id
-                        proto_id += 1
-                    if not row[9] in app_name:
-                        app_name[row[9]] = app_id
-                        app_id += 1
-                data_n+=1
-                
-    X = np.zeros((data_n, num_feature))
-    y = np.zeros((data_n, num_class))
-    dat_i = 0
-
-    for datum_i in range(data_n):
-        x_i = 0
-        for attr in range(5, 22):
-            #skip attr 8 and attr 9 first
-            if attr != 8 and attr != 9:
-                X[datum_i, x_i] = int(data[datum_i][attr])
-                x_i += 1
-        #one hot encoding of attr 8
-        X[datum_i, x_i+int(proto_name[data[datum_i][8]])] = 1
-        x_i += 4
-        #one hot encoding of attr 9
-        X[datum_i, x_i+int(app_name[data[datum_i][9]])] = 1
-        x_i += 45 
-        #dst, src port == zero
-        if int(data[datum_i][3]) == 0 and int(data[datum_i][4]) == 0:
-            X[datum_i, x_i] = 1
-        x_i+=1
-        #src inner IP
-        ip = data[datum_i][1].split('.')
-        if int(ip[0]) == 172 and int(ip[1]) >= 16 and int(ip[1]) < 32:
-            X[datum_i, x_i] = 1
-        elif int(ip[0]) == 192 and int(ip[1]) == 168:
-            X[datum_i, x_i] = 1
-        elif int(ip[0]) == 10:
-            X[datum_i, x_i] = 1
-        x_i+=1
-        #dst inner IP
-        ip = data[datum_i][2].split('.')
-        if int(ip[0]) == 172 and int(ip[1]) >= 16 and int(ip[1]) < 32:
-            X[datum_i, x_i] = 1
-        elif int(ip[0]) == 192 and int(ip[1]) == 168:
-            X[datum_i, x_i] = 1
-        elif int(ip[0]) == 10:
-            X[datum_i, x_i] = 1
-        x_i+=1
-        '''
-        #is sweep
-        if datum_i == 0:
-            X[datum_i, x_i] = 0
-        else:
-            src_prev_ip = data[datum_i-1][1].split('.')
-            dst_prev_ip = data[datum_i-1][2].split('.')
-            src_ip = data[datum_i][1].split('.')
-            dst_ip = data[datum_i][2].split('.')
-            src_prev_val = int(src_prev_ip[0])*(256**3)+int(src_prev_ip[1])*(256**2)+int(src_prev_ip[2])*(256)+int(src_prev_ip[3])
-            dst_prev_val = int(dst_prev_ip[0])*(256**3)+int(dst_prev_ip[1])*(256**2)+int(dst_prev_ip[2])*(256)+int(dst_prev_ip[3])
-            src_val = int(src_ip[0])*(256**3)+int(src_ip[1])*(256**2)+int(src_ip[2])*(256)+int(src_ip[3])
-            dst_val = int(dst_ip[0])*(256**3)+int(dst_ip[1])*(256**2)+int(dst_ip[2])*(256)+int(dst_ip[3])
-            if src_prev_val==src_val and abs(dst_prev_val-dst_val)==1:
-                X[datum_i, x_i] = 1
-            else:
-                X[datum_i, x_i] = 0
-        x_i += 1
-        '''
-        #dst IP end with 255:
-        if int(ip[-1]) == 255:
-            X[datum_i, x_i] = 1
-        x_i+=1
-        
-        #flow diff
-        if int(data[datum_i][6])-int(data[datum_i][7]) > 0:
-            X[datum_i, x_i] = 1
-        x_i+=1
-        '''
-        #in == out == 0
-        if int(data[datum_i][6]) == int(data[datum_i][7]) == 0:
-            X[datum_i, x_i] = 1
-        x_i+=1
-        '''
-        #IP transformation    
-        '''
-        ip = data[datum_i][1].split('.')
-        for ip_str in ip:
-            ip_n = bin(int(ip_str)+1024)
-            for n in range(1, 9):
-                X[datum_i, x_i+8-n] = int(ip_n[-n])
-            x_i+=8
-        
-        ip = data[datum_i][2].split('.')
-        for ip_str in ip:
-            ip_n = bin(int(ip_str)+1024)
-            for n in range(1, 9):
-                X[datum_i, x_i+8-n] = int(ip_n[-n])
-            x_i+=8
-        '''
-        #port transform
-        '''
-        port_n = bin(int(data[datum_i][3])+1024*1024)
-        for n in range(1, 17):
-            X[datum_i, x_i+16-n] = int(port_n[-n])
-        x_i+=16
-        port_n = bin(int(data[datum_i][4])+1024*1024)
-        for n in range(1, 17):
-            X[datum_i, x_i+16-n] = int(port_n[-n])
-        x_i+=16
-        '''
-        if train_file:
-            y[datum_i, label[data[datum_i][22]]] = 1
-        else:
-            if validation_check:
-                y[datum_i, label[data[datum_i][22]]] = 1
-            else:
-                y[datum_i, 0] = 1
-
-    return X, y
-
-def BalancedData(X, y):
-    
-    y_id = np.argmax(y, axis=-1)
-    NORMAL_OFFSET = 0
-    normal_id = []
-    abnormal_id = []
-    seq_id = {}
-    
-    for i in range(len(y_id)):
-        #if train_file:
-        if y_id[i] != 1:
-            if y_id[i] == 2:
-                NORMAL_OFFSET += 1
-            #abnormal_id.append(time_id[i][1])
-            abnormal_id.append(i)
-        else:
-            #normal_id.append(time_id[i][1])
-            normal_id.append(i)
-    
-    NORMAL_OFFSET = int(NORMAL_OFFSET*1.3) 
-
-    data_id = abnormal_id[:]
-    balanced_normal_id = random.sample(normal_id, NORMAL_OFFSET)
-    data_id.extend(balanced_normal_id)
-    data_n = len(data_id)
-    
-    X_bal = np.zeros((data_n, num_feature))
-    y_bal = np.zeros((data_n, num_class))
-    
-    dat_i = 0
-    for datum_i in data_id:
-        x_i = 0
-        X_bal[dat_i, x_i:x_i+num_feature] = X[datum_i, :]
-        y_bal[dat_i, :] = y[datum_i, :]
-        
-        dat_i += 1
-
-    return X_bal, y_bal
-
-def Normalization(X_train, X_test, norm_std):
-    ##normalization -> [0, 1]
-    for x_i in range(15):
-        
-        concat = np.zeros(len(X_train)+len(X_test))
-        concat[:len(X_train)] = X_train[:, x_i]
-        concat[len(X_train):] = X_test[:, x_i]
-        #mean = np.mean(concat)
-        std = np.std(concat)
-        norm_std[x_i] = std
-        X_train[:, x_i] = (X_train[:, x_i])/std
-        X_test[:, x_i] = (X_test[:, x_i])/std
-        
+##if the server does not have GPU, remove this line
+os.environ["CUDA_VISIBLE_DEVICES"]="1"  
 
 class nnModel():
-    def __init__(self):
-        unit_size = 16
+    def __init__(self, num_feature, num_class):
+        #model parameters
+        unit_size = 2048
+        dp_rate = 0.5
+        l_rate = 0.001
 
         self.model = Sequential()
-        self.model.add(Dense(32, activation='relu', input_shape=(num_feature,)))
-        self.model.add(Dropout(0.2))
-        self.model.add(Dense(32, activation='relu'))
-        self.model.add(Dropout(0.2))
+        self.model.add(Dense(unit_size, activation='relu', input_shape=(num_feature,)))
+        self.model.add(Dropout(dp_rate))
+        self.model.add(Dense(unit_size, activation='relu'))
+        self.model.add(Dropout(dp_rate))
+        self.model.add(Dense(unit_size, activation='relu'))
+        self.model.add(Dropout(dp_rate))
         self.model.add(Dense(num_class, activation='softmax'))
-        self.model.compile(loss='categorical_crossentropy', optimizer='Adam', metrics=['accuracy'])
+        self.optimizer = optimizers.Adam(lr=l_rate)
+        self.model.compile(loss='categorical_crossentropy', optimizer=self.optimizer, metrics=['accuracy'])
         self.model.summary()
 
     def trainModel(self, X, y, batch_size):
@@ -265,167 +55,117 @@ class nnModel():
 
     def saveModel(self, model_n):
         self.model.save(model_n)
+    
     def loadModel(self, model_n):
-        self.model = load_model(model_n)
+        self.model = keras.models.load_model(model_n)
 
-if __name__ == '__main__':
+def compute_norm(df):
+    ##used for preprocessing
+    ##to compute mean and stdev from all data
+    norm_zscore = np.zeros((2, 15))
+    count_feature = ['duration', 'out (bytes)', 'in (bytes)',\
+    'cnt_dst', 'cnt_src', 'cnt_serv_src',\
+    'cnt_serv_dst', 'cnt_dst_slow', 'cnt_src_slow', 'cnt_serv_src_slow',\
+    'cnt_serv_dst_slow', 'cnt_dst_conn', 'cnt_src_conn',\
+    'cnt_serv_src_conn', 'cnt_serv_dst_conn']
+     
+    _df = df[count_feature]
+    data = _df.to_numpy()
+    norm_zscore[0, :] = np.mean(data, axis=0)
+    norm_zscore[1, :] = np.std(data, axis=0)
     
-    args = parse_arg()
-    pretrained = False
-    #exp_id = args.id
-    if args.pretrained == "True":
-        pretrained = True
-    ## data preprocessing
-    print('preprocessing')
-    split = 0.8
-    norm_std = np.zeros(15)
-    app_name={}
-    proto_name={}
-    ## load data (training, validation and testing)
-    if not pretrained:
+    return norm_zscore
 
-        if os.path.isfile(processed_trn_data) and os.path.isfile(processed_trn_label):
-            X = np.load(processed_trn_data)
-            y = np.load(processed_trn_label)
-            with open(app_encoder, 'rb') as fp:
-                app_name = pickle.load(fp)
-            with open(proto_encoder, 'rb') as fp:
-                proto_name = pickle.load(fp)
-        else:
-            X, y = genData(args.trn, app_name, proto_name)
-            np.save(processed_trn_data, X)
-            np.save(processed_trn_label, y)
-            with open(app_encoder, 'wb') as fp:
-                pickle.dump(app_name, fp)    
-            with open(proto_encoder, 'wb') as fp:
-                pickle.dump(proto_name, fp)    
+def load_norm(fname):
+    norm_zscore = np.load(fname)
+    return norm_zscore
+
+def save_norm(fname, norm_zscore):
+    np.save(fname, norm_zscore)
+
+def normalize_data(X, norm_zscore):
+    ##normalization -> z-score, mean=0.5, std=0.5
+    ##only normalize in, out, all cnt, duration features.
+    X_norm = X[:]
+    X_norm[:, :15] = 0.5*(X[:, :15]-norm_zscore[0, :])/norm_zscore[1, :] + 0.5
+
+    return X_norm
+
+def onehot_transform(y_label, n_class):
+    num_data = len(y_label)
+    y_onehot = np.zeros((num_data, n_class))
+
+    for y_i in range(num_data):
+        y_onehot[y_i, int(y_label[y_i])] = 1
+
+    return y_onehot
+
+def nn_training(data, n_class, norm_zscore):
     
-        if os.path.isfile(processed_tst_data):
-            X_tst = np.load(processed_tst_data)
-            if validation_check:
-                y_tst = np.load(processed_tst_label)
-        else:
-            if validation_check:
-                X_tst, y_tst = genData(args.tst, app_name, proto_name, False)
-                np.save(processed_tst_data, X_tst)
-                np.save(processed_tst_label, y_tst)
-            else:
-                X_tst, _ = genData(args.tst, app_name, proto_name, False)
-                np.save(processed_tst_data, X_tst)
-    
-        num_trn = len(X)
-        num_tst = len(X_tst)
-        print('num training data: ' + str(num_trn)) 
-        print('num testing data: ' + str(num_tst)) 
-        Normalization(X, X_tst, norm_std)
-    
-        X, y = BalancedData(X, y)
-        num_trn = len(X)
-        print('balanced num training data: ' + str(num_trn)) 
-        data_split = int(split*len(X))
-        num_val = len(X[data_split:])
-        if validation_check:
-            y_test = np.argmax(y_tst, axis=-1)
-    
-        if validation_check:
-            shuffle_id = np.arange(num_trn)
-            np.random.seed(7)
-            np.random.shuffle(shuffle_id)
-            X = X[shuffle_id]
-            y = y[shuffle_id]
-            X_train, y_train, X_val, y_val = X[:data_split], y[:data_split], X[data_split:], y[data_split:]
-            val_test = np.argmax(y[data_split:], axis=-1)
-        else:
-            X_train, y_train = X[:], y[:]
-    
+    print('preparing data for nn')
+    X = data[[c for c in data.columns if c != 'label']].copy()
+    Y = data[['label']].copy()
+    X_normalized = normalize_data(X.values, norm_zscore)
+    X_train, X_test, y_train, y_test = train_test_split(X_normalized, Y.values, test_size=0.2, random_state=7)
+    n_feature = len(X_train[-1])
+
+    ## one hot encoding libraries are tooooooo slow, so I implemented it.
+    y_train_onehot = onehot_transform(y_train, n_class)
+    y_test_onehot = onehot_transform(y_test, n_class)
     
     ## build model 
-    print('build model')
-    model = nnModel()
+    print('building model')
+    model = nnModel(n_feature, n_class)
+
+    ## train model
+    print('training')
+    ##parameters for training
+    epochs = 9999 #early stop will interrupt iterations
+    batch_size = 128 # 2048 is upper bound
     
-    ## load model 
-    if pretrained:
-        print('load model')
-        model.loadModel(nn_model)
-        norm_std = np.load(norm)
-        with open(app_encoder, 'rb') as fp:
-            app_name = pickle.load(fp)
-        with open(proto_encoder, 'rb') as fp:
-            proto_name = pickle.load(fp)
+    prev_loss = 10000
+    cur_loss = prev_loss
+    early_stop_patience = 10
+    stop_count = 0
     
-    ## training (adust hyper parameters)
-    epochs = 35
-    batch_size = 128#2048 is upper bound
-
-    if pretrained:
-        print('testing')
-        for tst_file in args.tst:
-            #data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
-            X, _ = genData([tst_file], app_name, proto_name, False)
-            for x_i in range(15):
-                X[:, x_i] = (X[:, x_i])/norm_std[x_i]
-
-            nn_pred, nn_prob = model.testModel(X)
-            df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_prob)
-            # postprocess
-            for time_setting in ['minute', 'hour']:
-                test = pd.read_csv(tst_file)
-                ans = test[['time','src']].copy()
-                ans = pd.concat([ans, df_pred], axis=1)
-                ans['time'] = ans['time'].apply(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
-                if time_setting == 'hour':
-                    ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2))
-                elif time_setting == 'minute':
-                    ans['time'] = ans['time'].apply(lambda x: str(x.month).zfill(2)+str(x.day).zfill(2)+str(x.hour).zfill(2)+str(x.minute).zfill(2))
-                ans['time+src'] = ans['time'].apply(str) + ans['src'].apply(str)
-                ans.drop(columns=['time','src'],inplace=True)
-                d_v = ans.groupby(['time+src']).sum()
-                d_v = d_v.idxmax(axis='columns').to_frame()
-                DIC = {}
-                for idx, row in d_v.iterrows():
-                    DIC[idx] = row[0]
-                ans['pred'] = [1 for i in range(len(ans))]
-                ans['pred'] = ans['time+src'].apply(lambda x: DIC[x])
-                if time_setting == 'hour':
-                    m_df = pd.read_csv(tst_file[:-4]+'_minute_nn_predicted.csv')
-                    d_idx = list(m_df[m_df['label']=='DDOS-smurf'].index)
-                    ans.loc[d_idx, 'pred'] = 0
-                y_pred = ans['pred'].values
-            
-                # Transform label and save data
-                label_map = {0: 'DDOS-smurf', 1: 'Normal', 2: 'Probing-IP sweep', 3: 'Probing-Nmap', 4: 'Probing-Port sweep'}
-                test['label'] = ans['pred']
-                test['label'] = test['label'].apply(lambda x: label_map[x])
-                #dat_tst = data_tst.copy()
-                #main_.evaluation(dat_tst, y_pred)
-                if time_setting == 'minute':
-                    test.to_csv(tst_file[:-4]+'_'+time_setting+'_nn_predicted.csv', index=False)
-                elif time_setting == 'hour':
-                    test.to_csv(tst_file[:-4]+'_nn.csv', index=False)
-
-    else:
-        print('training')
-        for ep in range(epochs):
-            print('Epoch: ' + str(ep+1) + '/' + str(epochs))
-            model.trainModel(X_train, y_train, batch_size)
+    for ep in range(epochs):
+        print('Epoch: ' + str(ep+1) + '/' + str(epochs))
+        model.trainModel(X_train, y_train_onehot, batch_size)
         
-            if validation_check:
-                val_acc = model.validationModel(X_val, y_val)
-                print('val acc: ' + str(val_acc))
+        val_acc = model.validationModel(X_test, y_test_onehot)
+        print('val acc: ' + str(val_acc))
+        
+        cur_loss = val_acc[0]
+        if prev_loss > cur_loss:
+            prev_loss = cur_loss
+            stop_count = 0
+        else:
+            stop_count += 1
+        if stop_count >= early_stop_patience:
+            break
 
+    nn_pred, nn_prob = model.testModel(X_test)
+    xgb.eval(y_test, nn_pred)
+    
+    return model
 
-    ## testing
-    if not pretrained:
-        if validation_check:
-            print('testing')
-            val_pred, val_prob = model.testModel(X_val)
-            xgb.eval(val_test, val_pred)
-            y_pred, y_prob = model.testModel(X_tst)
-            xgb.eval(y_test, y_pred)
+def nn_prediction(data, model, norm_zscore):
+        
+    X = data[[c for c in data.columns if c != 'label']].copy().values
+    X_normalized = normalize_data(X, norm_zscore)
 
-    ## save model
-    if not pretrained:
-        print('save model')
-        model.saveModel(nn_model)
-        np.save(norm, norm_std)        
+    ## testing and prediction
+    print('testing')
+    nn_pred, nn_prob = model.testModel(X_normalized)
+    
+    return nn_prob
 
+def save_model(model, fname):
+    model.saveModel(fname)
+
+def load_model(fname):
+    model = nnModel(1, 1)
+    model.loadModel(fname)
+    return model
+
+    

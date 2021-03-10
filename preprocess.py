@@ -13,6 +13,7 @@ import multiprocessing
 import math
 import datetime
 import time
+import nn
 
 class Preprocessor:
     def __init__(self):
@@ -269,3 +270,15 @@ if __name__ == '__main__':
             proto_name = pickle.load(f) 
         data_tst = data_transform(Processor, df_tst, app_name, proto_name, False)
         data_tst.to_csv(tst_file[:-4]+'_processed.csv', index=False)
+    
+    ##TODO: do normalization for nn; it needs to concat both trn and tst files.
+    ##normalization gets data's mean and std, storing them for nn.
+    ##need to discuss this part because normalization requires to see all trn and tst data.
+    #if str(args.pretrained)=='False':
+        f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
+        f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
+        df_all = pd.concat(f_all)
+        norm_zscore = nn.compute_norm(df_all)
+        nn.save_norm("pretrained/norm_zscore.npy", norm_zscore)
+    
+
