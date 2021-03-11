@@ -147,21 +147,16 @@ def preprocess_ip_binarize(df, column):
 
     return data
 
-def preprocess_ip_split(df):
+def preprocess_is_sweep(df):
     df_src = df['src'].str.split('.', expand=True)
     df_dst = df['dst'].str.split('.', expand=True)
-    df_spt = df[['spt']].copy()
-    df_dpt = df[['dpt']].copy()
     df_src = df_src.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(df_src.columns)})
     df_dst = df_dst.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(df_dst.columns)})
-    df_spt = df_spt.rename(columns={'spt': 'spt_diff'})
-    df_dpt = df_dpt.rename(columns={'dpt': 'dpt_diff'})
+
     for i in range(4):
         df_src['src_'+str(i)] = df_src['src_'+str(i)].astype(int)
         df_dst['dst_'+str(i)] = df_dst['dst_'+str(i)].astype(int)
-    df_spt['spt_diff'] = df_spt['spt_diff'].astype(int)
-    df_dpt['dpt_diff'] = df_dpt['dpt_diff'].astype(int)
-    sd = pd.concat([df_src, df_dst, df_spt, df_dpt], axis=1)
+    sd = pd.concat([df_src, df_dst], axis=1)
     sd = sd.diff()
     for c in sd.columns:
         sd[c] = sd[c].apply(lambda x: int(x!=0))
