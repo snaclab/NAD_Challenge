@@ -43,14 +43,14 @@ if __name__ == '__main__':
     if str(args.pretrained)=='True':
         model = xgb.load_model('pretrained/model.pkl')
        
-        norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
+        norm_zscore = preprocess.load_norm('pretrained/norm_zscore.npy')
         nn_model = nn.load_model('pretrained/nn.h5')
     else:
         data_trn = pd.read_csv(args.trn)
         model = xgb.XGB_training(data_trn, n_class)
         xgb.save_model(model, 'pretrained/model.pkl')
         
-        norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
+        norm_zscore = preprocess.load_norm('pretrained/norm_zscore.npy')
         nn_model = nn.nn_training(data_trn, n_class, norm_zscore)
         nn.save_model(nn_model, 'pretrained/nn.h5')
     for tst_file in args.tst_src:
@@ -70,6 +70,6 @@ if __name__ == '__main__':
         
         if run_ensemble:
             ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
-        elif str(args.eval) == 'True':
+        if str(args.eval) == 'True':
             evaluation(data_tst.copy(), y_pred_final)
             evaluation(data_tst.copy(), nn_pred_final)
