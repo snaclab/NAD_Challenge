@@ -232,13 +232,13 @@ def parse_arg():
     parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
     parser.add_argument('--tst', nargs='+', help='input testing dataset', required=False)
     parser.add_argument('--output_trn', help='output processed training dataset', required=False)
-    parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
+    parser.add_argument('--pretrained', help='contains pretrained encoder', action='store_true')
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = parse_arg()
     
-    if str(args.pretrained)=='False':
+    if not args.pretrained:
         # read data sets
         df_trn = pd.concat([pd.read_csv(args.trn[i]) for i in range(len(args.trn))])
         n_class = len(df_trn['label'].unique())
@@ -274,7 +274,7 @@ if __name__ == '__main__':
     ##TODO: do normalization for nn; it needs to concat both trn and tst files.
     ##normalization gets data's mean and std, storing them for nn.
     ##need to discuss this part because normalization requires to see all trn and tst data.
-    #if str(args.pretrained)=='False':
+    if not args.pretrained:
         f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
         f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
         df_all = pd.concat(f_all)

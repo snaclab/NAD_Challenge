@@ -14,10 +14,11 @@ from ensembling import ensemble
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process dataset name')
-    parser.add_argument('--pretrained', help='whether exists pretrained model', default=False)
+    parser.add_argument('--pretrained', help='exists pretrained model', action='store_true')
     parser.add_argument('--tst_src', nargs='+',  help='original test dataset', required=True)
     parser.add_argument('--trn', help='input training dataset', required=False)
-    parser.add_argument('--eval', help='whether evaluate predicted result (when exists ground truth)', default=False)
+    parser.add_argument('--eval', help='evaluate predicted result (when exists ground truth)', action='store_true')
+    parser.add_argument('--ensemble', help='use ensemble method', action='store_true')
     return parser.parse_args()
 
 def evaluation(data_tst, y_pred):
@@ -34,13 +35,12 @@ def evaluation(data_tst, y_pred):
 
 if __name__ == '__main__':
     args = parse_arg()
-    run_ensemble = False
     # combined or dynamic
     voting_method = 'combined'
     n_class = 5
 
     # training process
-    if str(args.pretrained)=='True':
+    if args.pretrained:
         model = xgb.load_model('pretrained/model.pkl')
        
         norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
@@ -68,8 +68,8 @@ if __name__ == '__main__':
         df_nn_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_pred)
         nn_pred_final = postprocess.post_processing(tst_file, df_nn_pred, 'nn')
         
-        if run_ensemble:
+        if args.ensemble:
             ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
-        elif str(args.eval) == 'True':
+        elif args.eval:
             evaluation(data_tst.copy(), y_pred_final)
             evaluation(data_tst.copy(), nn_pred_final)
