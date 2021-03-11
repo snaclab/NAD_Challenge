@@ -14,10 +14,11 @@ from ensembling import ensemble
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process dataset name')
-    parser.add_argument('--pretrained', help='whether exists pretrained model', default=False)
+    parser.add_argument('--pretrained', help='exists pretrained model', action='store_true')
     parser.add_argument('--tst_src', nargs='+',  help='original test dataset', required=True)
     parser.add_argument('--trn', help='input training dataset', required=False)
-    parser.add_argument('--eval', help='whether evaluate predicted result (when exists ground truth)', default=False)
+    parser.add_argument('--eval', help='evaluate predicted result (when exists ground truth)', action='store_true')
+    parser.add_argument('--ensemble', help='use ensemble method', action='store_true')
     return parser.parse_args()
 
 def evaluation(data_tst, y_pred):
@@ -32,44 +33,47 @@ def evaluation(data_tst, y_pred):
     cost = np.multiply(cost_matrix, conf_matrix)
     print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost)*len(data_tst))))+0.7*macro_fbeta_score)
 
+
 if __name__ == '__main__':
     args = parse_arg()
-    run_ensemble = False
     # combined or dynamic
     voting_method = 'combined'
     n_class = 5
 
     # training process
-    if str(args.pretrained)=='True':
+    if args.pretrained:
         model = xgb.load_model('pretrained/model.pkl')
-       
-        norm_zscore = preprocess.load_norm('pretrained/norm_zscore.npy')
-        nn_model = nn.load_model('pretrained/nn.h5')
     else:
         data_trn = pd.read_csv(args.trn)
         model = xgb.XGB_training(data_trn, n_class)
         xgb.save_model(model, 'pretrained/model.pkl')
         
+    if args.ensemble:
         norm_zscore = preprocess.load_norm('pretrained/norm_zscore.npy')
-        nn_model = nn.nn_training(data_trn, n_class, norm_zscore)
-        nn.save_model(nn_model, 'pretrained/nn.h5')
+        if args.pretrained:
+            nn_model = nn.load_model('pretrained/nn.h5')
+        else:
+            nn_model = nn.nn_training(data_trn, n_class, norm_zscore)
+            nn.save_model(nn_model, 'pretrained/nn.h5')  
+    # testing
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')
         # predictions
         y_pred = xgb.XGB_prediction(data_tst, model)
         df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         
-        if voting_method=='dynamic':
+        if voting_method == 'dynamic':
             y_pred_final = postprocess.post_processing_dynamic(tst_file, df_pred, 'xgb')
-        else:
+        elif voting_method == 'combined':
             y_pred_final = postprocess.post_processing_combined(tst_file, df_pred, 'xgb')
-        
-        nn_pred = nn.nn_prediction(data_tst, nn_model, norm_zscore)
-        df_nn_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_pred)
-        nn_pred_final = postprocess.post_processing(tst_file, df_nn_pred, 'nn')
-        
-        if run_ensemble:
+        else:
+            raise NameError("voting method undefined")
+                
+        if args.ensemble:
+            nn_pred = nn.nn_prediction(data_tst, nn_model, norm_zscore)
+            df_nn_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_pred)
+            nn_pred_final = postprocess.post_processing(tst_file, df_nn_pred, 'nn')
             ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
-        if str(args.eval) == 'True':
+        elif args.eval:
+            print ("XGB evaluation:")
             evaluation(data_tst.copy(), y_pred_final)
-            evaluation(data_tst.copy(), nn_pred_final)

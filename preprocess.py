@@ -146,21 +146,16 @@ def preprocess_ip_binarize(df, column):
 
     return data
 
-def preprocess_ip_split(df):
+def preprocess_is_sweep(df):
     df_src = df['src'].str.split('.', expand=True)
     df_dst = df['dst'].str.split('.', expand=True)
-    df_spt = df[['spt']].copy()
-    df_dpt = df[['dpt']].copy()
     df_src = df_src.rename(columns={x: 'src_{}'.format(idx) for idx, x in enumerate(df_src.columns)})
     df_dst = df_dst.rename(columns={x: 'dst_{}'.format(idx) for idx, x in enumerate(df_dst.columns)})
-    df_spt = df_spt.rename(columns={'spt': 'spt_diff'})
-    df_dpt = df_dpt.rename(columns={'dpt': 'dpt_diff'})
+
     for i in range(4):
         df_src['src_'+str(i)] = df_src['src_'+str(i)].astype(int)
         df_dst['dst_'+str(i)] = df_dst['dst_'+str(i)].astype(int)
-    df_spt['spt_diff'] = df_spt['spt_diff'].astype(int)
-    df_dpt['dpt_diff'] = df_dpt['dpt_diff'].astype(int)
-    sd = pd.concat([df_src, df_dst, df_spt, df_dpt], axis=1)
+    sd = pd.concat([df_src, df_dst], axis=1)
     sd = sd.diff()
     for c in sd.columns:
         sd[c] = sd[c].apply(lambda x: int(x!=0))
@@ -255,13 +250,13 @@ def parse_arg():
     parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
     parser.add_argument('--tst', nargs='+', help='input testing dataset', required=False)
     parser.add_argument('--output_trn', help='output processed training dataset', required=False)
-    parser.add_argument('--pretrained', help='if there is pretrained encoder', default=False)
+    parser.add_argument('--pretrained', help='contains pretrained encoder', action='store_true')
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = parse_arg()
     
-    if str(args.pretrained)=='False':
+    if not args.pretrained:
         # read data sets
         df_trn = pd.concat([pd.read_csv(args.trn[i]) for i in range(len(args.trn))])
         n_class = len(df_trn['label'].unique())
@@ -294,7 +289,7 @@ if __name__ == '__main__':
         data_tst = data_transform(Processor, df_tst, app_name, proto_name, False)
         data_tst.to_csv(tst_file[:-4]+'_processed.csv', index=False)
     
-    if str(args.pretrained)=='False':
+    if not args.pretrained:
         f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
         f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
         df_all = pd.concat(f_all)

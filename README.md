@@ -48,7 +48,7 @@ $ sh run.sh
 For data preprocessing, please use following script.
 
 ```shell
-$ python preprocess.py --trn /path/to/training_data/training_data.csv --tst /path/to/testing_data/testing_data.csv --output_trn train.csv --pretrained False
+$ python preprocess.py --trn /path/to/training_data/training_data.csv --tst /path/to/testing_data/testing_data.csv --output_trn train.csv
 ```
 
 ### Training
@@ -56,7 +56,7 @@ $ python preprocess.py --trn /path/to/training_data/training_data.csv --tst /pat
 For training model, please use following script.
 
 ```shell
-$ python main.py --trn train.csv --tst_src /path/to/testing_data/testing_data.csv --pretrained False
+$ python main.py --trn train.csv --tst_src /path/to/testing_data/testing_data.csv
 ```
 
 ### Prediction
@@ -64,6 +64,6 @@ $ python main.py --trn train.csv --tst_src /path/to/testing_data/testing_data.cs
 For prediction, please use following script. Note that you should train your model first by running script above to create pretrained model.
 
 ```shell
-$ python main.py --tst_src /path/to/testing_data/testing_data.csv --pretrained True
+$ python main.py --tst_src /path/to/testing_data/testing_data.csv --pretrained
 ```
 
