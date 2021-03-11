@@ -33,6 +33,15 @@ def evaluation(data_tst, y_pred):
     cost = np.multiply(cost_matrix, conf_matrix)
     print('Evaluation criteria: ', 0.3*(1-(math.log(np.sum(cost))/math.log(np.amax(cost)*len(data_tst))))+0.7*macro_fbeta_score)
 
+def post_process(voting_method, tst_file, df_pred, base_model):
+    if voting_method == 'dynamic':
+        y_pred_final = postprocess.post_processing_dynamic(tst_file, df_pred, base_model)
+    elif voting_method == 'combined':
+        y_pred_final = postprocess.post_processing_combined(tst_file, df_pred, base_model)
+    else:
+        raise NameError("voting method undefined")
+
+    return y_pred_final
 
 if __name__ == '__main__':
     args = parse_arg()
@@ -62,17 +71,12 @@ if __name__ == '__main__':
         y_pred = xgb.XGB_prediction(data_tst, model)
         df_pred = pd.DataFrame(columns=[0,1,2,3,4], data=y_pred)
         
-        if voting_method == 'dynamic':
-            y_pred_final = postprocess.post_processing_dynamic(tst_file, df_pred, 'xgb')
-        elif voting_method == 'combined':
-            y_pred_final = postprocess.post_processing_combined(tst_file, df_pred, 'xgb')
-        else:
-            raise NameError("voting method undefined")
+        y_pred_final = post_process(voting_method, tst_file, df_pred, 'xgb')
                 
         if args.ensemble:
             nn_pred = nn.nn_prediction(data_tst, nn_model, norm_zscore)
             df_nn_pred = pd.DataFrame(columns=[0,1,2,3,4], data=nn_pred)
-            nn_pred_final = postprocess.post_processing(tst_file, df_nn_pred, 'nn')
+            nn_pred_final = post_process(voting_method, tst_file, df_nn_pred, 'nn')
             ensemble('xgb', args.eval, tst_file, tst_file[:-4]+'_xgb.csv', tst_file[:-4]+'_nn.csv')
         elif args.eval:
             print ("XGB evaluation:")
