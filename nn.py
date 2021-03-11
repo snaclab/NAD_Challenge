@@ -27,7 +27,7 @@ class nnModel():
         #model parameters
         unit_size = 2048
         dp_rate = 0.5
-        l_rate = 0.001
+        l_rate = 0.0005
 
         self.model = Sequential()
         self.model.add(Dense(unit_size, activation='relu', input_shape=(num_feature,)))
@@ -59,30 +59,6 @@ class nnModel():
     def loadModel(self, model_n):
         self.model = keras.models.load_model(model_n)
 
-def compute_norm(df):
-    ##used for preprocessing
-    ##to compute mean and stdev from all data
-    norm_zscore = np.zeros((2, 15))
-    count_feature = ['duration', 'out (bytes)', 'in (bytes)',\
-    'cnt_dst', 'cnt_src', 'cnt_serv_src',\
-    'cnt_serv_dst', 'cnt_dst_slow', 'cnt_src_slow', 'cnt_serv_src_slow',\
-    'cnt_serv_dst_slow', 'cnt_dst_conn', 'cnt_src_conn',\
-    'cnt_serv_src_conn', 'cnt_serv_dst_conn']
-     
-    _df = df[count_feature]
-    data = _df.to_numpy()
-    norm_zscore[0, :] = np.mean(data, axis=0)
-    norm_zscore[1, :] = np.std(data, axis=0)
-    
-    return norm_zscore
-
-def load_norm(fname):
-    norm_zscore = np.load(fname)
-    return norm_zscore
-
-def save_norm(fname, norm_zscore):
-    np.save(fname, norm_zscore)
-
 def normalize_data(X, norm_zscore):
     ##normalization -> z-score, mean=0.5, std=0.5
     ##only normalize in, out, all cnt, duration features.
@@ -109,7 +85,6 @@ def nn_training(data, n_class, norm_zscore):
     X_train, X_test, y_train, y_test = train_test_split(X_normalized, Y.values, test_size=0.2, random_state=7)
     n_feature = len(X_train[-1])
 
-    ## one hot encoding libraries are tooooooo slow, so I implemented it.
     y_train_onehot = onehot_transform(y_train, n_class)
     y_test_onehot = onehot_transform(y_test, n_class)
     
@@ -120,14 +95,14 @@ def nn_training(data, n_class, norm_zscore):
     ## train model
     print('training')
     ##parameters for training
-    epochs = 9999 #early stop will interrupt iterations
     batch_size = 128 # 2048 is upper bound
+    early_stop_patience = 10 #if the validation stop improving, the iterations will break
     
+    ## running training algorithm
+    epochs = 100 #early stop will interrupt iterations
+    stop_count = 0
     prev_loss = 10000
     cur_loss = prev_loss
-    early_stop_patience = 10
-    stop_count = 0
-    
     for ep in range(epochs):
         print('Epoch: ' + str(ep+1) + '/' + str(epochs))
         model.trainModel(X_train, y_train_onehot, batch_size)

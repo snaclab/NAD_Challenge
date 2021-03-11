@@ -48,15 +48,13 @@ if __name__ == '__main__':
         model = xgb.XGB_training(data_trn, n_class)
         xgb.save_model(model, 'pretrained/model.pkl')
         
-    # NN model
     if args.ensemble:
-        norm_zscore = nn.load_norm('pretrained/norm_zscore.npy')
+        norm_zscore = preprocess.load_norm('pretrained/norm_zscore.npy')
         if args.pretrained:
             nn_model = nn.load_model('pretrained/nn.h5')
         else:
             nn_model = nn.nn_training(data_trn, n_class, norm_zscore)
-            nn.save_model(nn_model, 'pretrained/nn.h5')
-    
+            nn.save_model(nn_model, 'pretrained/nn.h5')  
     # testing
     for tst_file in args.tst_src:
         data_tst = pd.read_csv(tst_file[:-4]+'_processed.csv')

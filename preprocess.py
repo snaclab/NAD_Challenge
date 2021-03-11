@@ -13,7 +13,6 @@ import multiprocessing
 import math
 import datetime
 import time
-import nn
 
 class Preprocessor:
     def __init__(self):
@@ -222,6 +221,30 @@ def algin_cnt_feature(df):
 
     return df
 
+def compute_norm(df):
+    ##used for preprocessing
+    ##to compute mean and stdev from all data
+    norm_zscore = np.zeros((2, 15))
+    count_feature = ['duration', 'out (bytes)', 'in (bytes)',\
+    'cnt_dst', 'cnt_src', 'cnt_serv_src',\
+    'cnt_serv_dst', 'cnt_dst_slow', 'cnt_src_slow', 'cnt_serv_src_slow',\
+    'cnt_serv_dst_slow', 'cnt_dst_conn', 'cnt_src_conn',\
+    'cnt_serv_src_conn', 'cnt_serv_dst_conn']
+     
+    _df = df[count_feature]
+    data = _df.to_numpy()
+    norm_zscore[0, :] = np.mean(data, axis=0)
+    norm_zscore[1, :] = np.std(data, axis=0)
+    
+    return norm_zscore
+
+def load_norm(fname):
+    norm_zscore = np.load(fname)
+    return norm_zscore
+
+def save_norm(fname, norm_zscore):
+    np.save(fname, norm_zscore)
+
 def parse_arg():
     parser = argparse.ArgumentParser()
     parser.add_argument('--trn', nargs='+', help='input training dataset', required=False)
@@ -266,14 +289,11 @@ if __name__ == '__main__':
         data_tst = data_transform(Processor, df_tst, app_name, proto_name, False)
         data_tst.to_csv(tst_file[:-4]+'_processed.csv', index=False)
     
-    ##TODO: do normalization for nn; it needs to concat both trn and tst files.
-    ##normalization gets data's mean and std, storing them for nn.
-    ##need to discuss this part because normalization requires to see all trn and tst data.
     if not args.pretrained:
         f_all = [pd.read_csv(args.trn[i]) for i in range(len(args.trn))]
         f_all.extend([pd.read_csv(args.tst[i]) for i in range(len(args.tst))])
         df_all = pd.concat(f_all)
-        norm_zscore = nn.compute_norm(df_all)
-        nn.save_norm("pretrained/norm_zscore.npy", norm_zscore)
+        norm_zscore = compute_norm(df_all)
+        save_norm("pretrained/norm_zscore.npy", norm_zscore)
     
 
