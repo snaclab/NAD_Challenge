@@ -20,7 +20,7 @@ import pandas as pd
 import datetime
 
 ##if the server does not have GPU, remove this line
-os.environ["CUDA_VISIBLE_DEVICES"]="1"  
+os.environ["CUDA_VISIBLE_DEVICES"]="0"  
 
 class nnModel():
     def __init__(self, num_feature, num_class):
@@ -81,6 +81,7 @@ def nn_training(data, n_class, norm_zscore):
     print('preparing data for nn')
     X = data[[c for c in data.columns if c != 'label']].copy()
     Y = data[['label']].copy()
+    X['flow_diff'] = X['flow_diff'].apply(lambda x: 1 if x>0 else 0)
     X_normalized = normalize_data(X.values, norm_zscore)
     X_train, X_test, y_train, y_test = train_test_split(X_normalized, Y.values, test_size=0.2, random_state=7)
     n_feature = len(X_train[-1])
@@ -126,8 +127,9 @@ def nn_training(data, n_class, norm_zscore):
 
 def nn_prediction(data, model, norm_zscore):
         
-    X = data[[c for c in data.columns if c != 'label']].copy().values
-    X_normalized = normalize_data(X, norm_zscore)
+    X = data[[c for c in data.columns if c != 'label']].copy()
+    X['flow_diff'] = X['flow_diff'].apply(lambda x: 1 if x>0 else 0)
+    X_normalized = normalize_data(X.values, norm_zscore)
 
     ## testing and prediction
     print('testing')
